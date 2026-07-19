@@ -12,9 +12,10 @@ export function total(b: Buffers): number {
   return n;
 }
 
-// Add up to `n`, respecting a per-buffer total cap. Returns the amount actually added.
+// Add up to `n`, respecting a per-RESOURCE cap (a furnace holds ore and charcoal independently).
+// Returns the amount actually added.
 export function add(b: Buffers, res: ResourceKind, n: number, cap: number): number {
-  const room = cap - total(b);
+  const room = cap - (b[res] ?? 0);
   const put = Math.max(0, Math.min(n, room));
   if (put > 0) b[res] = (b[res] ?? 0) + put;
   return put;

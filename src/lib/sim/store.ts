@@ -38,9 +38,10 @@ function emptyBank(): Record<ResourceKind, number> {
 export function makeInitialState(seed: number): GameState {
   const world = generateWorld(seed);
   const letters = initialLetters();
-  // Player starts at the works terrace, near the river mouth at the bottom.
-  const startX = Math.round(34 * 0.5) - 3;
-  const startY = 27;
+  // Player starts on the mid terrace, between the forest above and the ore/works below —
+  // close to the action so the opening isn't all walking.
+  const startX = 11;
+  const startY = 13;
   return {
     seed,
     timeMs: 0,

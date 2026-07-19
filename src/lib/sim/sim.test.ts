@@ -4,7 +4,8 @@ import { HEIGHT_BOTTOM, HEIGHT_MID, HEIGHT_TOP } from './constants';
 import { tickMachines, bankAllOutputs } from './machines';
 import { recomputeFlumePaths, tickFlume, tickIncline, tickFeeders } from './movers';
 import { actions, getGame, makeInitialState, checkLetters } from './store';
-import type { Building, GameState } from './types';
+import { placementError } from './buildings';
+import type { Building, BuildingKind, GameState } from './types';
 
 function drive(fn: (dt: number) => void, seconds: number, stepMs = 100): void {
   const steps = Math.round((seconds * 1000) / stepMs);
@@ -182,6 +183,80 @@ describe('player verbs', () => {
     actions.deposit();
     expect(g.flumeItems.length).toBe(3);
     expect(g.player.carryCount).toBe(0);
+  });
+});
+
+describe('completable valley (seed 1)', () => {
+  function validSpot(
+    g: GameState,
+    kind: BuildingKind,
+    y0: number,
+    y1: number,
+    pred?: (tx: number, ty: number) => boolean,
+  ): { tx: number; ty: number } | null {
+    for (let ty = y0; ty <= y1; ty++) {
+      for (let tx = 1; tx < 33; tx++) {
+        if (pred && !pred(tx, ty)) continue;
+        if (placementError(g, kind, tx, ty) === null) return { tx, ty };
+      }
+    }
+    return null;
+  }
+  function neighborSpot(
+    g: GameState,
+    kind: BuildingKind,
+    c: { tx: number; ty: number },
+    exclude: Array<{ tx: number; ty: number }> = [],
+  ): { tx: number; ty: number } | null {
+    for (const n of [
+      { tx: c.tx + 1, ty: c.ty },
+      { tx: c.tx - 1, ty: c.ty },
+      { tx: c.tx, ty: c.ty + 1 },
+      { tx: c.tx, ty: c.ty - 1 },
+    ]) {
+      if (exclude.some((e) => e.tx === n.tx && e.ty === n.ty)) continue;
+      if (placementError(g, kind, n.tx, n.ty) === null) return n;
+    }
+    return null;
+  }
+  const find = (g: GameState, tx: number, ty: number) => g.buildings.find((b) => b.tx === tx && b.ty === ty)!;
+
+  it('builds the automated furnace line on the real map and smelts iron', () => {
+    actions.init(1);
+    const g = getGame();
+    g.unlocked = ['stockpile', 'waterwheel', 'sawmill', 'flumeHead', 'flume', 'clamp', 'incline', 'furnace', 'blacksmith'];
+    g.bank.plank = 999;
+
+    // Powered sawmill + banking stockpile on the works terrace.
+    const ww = validSpot(g, 'waterwheel', 22, 32)!;
+    expect(ww, 'a riverbank tile exists').toBeTruthy();
+    expect(actions.place('waterwheel', ww.tx, ww.ty)).toBeNull();
+    const mill = validSpot(g, 'sawmill', 22, 32, (tx, ty) => Math.hypot(tx - ww.tx, ty - ww.ty) <= 4)!;
+    expect(mill, 'a sawmill fits within power reach').toBeTruthy();
+    expect(actions.place('sawmill', mill.tx, mill.ty)).toBeNull();
+    const millPile = neighborSpot(g, 'stockpile', mill)!;
+    expect(actions.place('stockpile', millPile.tx, millPile.ty)).toBeNull();
+
+    const beforePlank = g.bank.plank;
+    find(g, mill.tx, mill.ty).input.log = 6;
+    for (let i = 0; i < 140; i++) actions.simStep(100);
+    expect(g.bank.plank).toBeGreaterThan(beforePlank); // powered sawmill banked planks
+
+    // Automated furnace: incline (ore) + clamp (charcoal) feeding one furnace.
+    const inc = validSpot(g, 'incline', 19, 21)!;
+    expect(inc, 'a cliff-edge incline site exists near the ore').toBeTruthy();
+    expect(actions.place('incline', inc.tx, inc.ty)).toBeNull();
+    const furn = neighborSpot(g, 'furnace', inc)!;
+    expect(furn, 'a furnace fits beside the incline').toBeTruthy();
+    expect(actions.place('furnace', furn.tx, furn.ty)).toBeNull();
+    const clamp = neighborSpot(g, 'clamp', furn, [inc])!;
+    expect(clamp, 'a clamp fits beside the furnace').toBeTruthy();
+    expect(actions.place('clamp', clamp.tx, clamp.ty)).toBeNull();
+
+    find(g, inc.tx, inc.ty).input.ore = 12;
+    find(g, clamp.tx, clamp.ty).input.log = 8;
+    for (let i = 0; i < 450; i++) actions.simStep(100);
+    expect(find(g, furn.tx, furn.ty).output.iron ?? 0).toBeGreaterThan(0); // iron smelted on the real map
   });
 });
 

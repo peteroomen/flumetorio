@@ -119,13 +119,39 @@ try {
   });
   check('furnace smelts iron end-to-end in-browser', iron > 0, `iron=${iron}`);
 
-  // Screenshots (fresh game + debug overlay).
+  // Screenshots: fresh valley.
   await page.evaluate(() => {
     window.__fw.actions.init(1);
     window.__fw.scene.markTerrainDirty();
   });
   await sleep(600);
   await page.screenshot({ path: `${OUT}/slice-valley.png` });
+
+  // Demo scene: one of every building near the player, so the sprites can be eyeballed.
+  await page.evaluate(() => {
+    const { getGame } = window.__fw;
+    const g = getGame();
+    const b = (kind, tx, ty, extra = {}) =>
+      g.buildings.push({ id: g.nextId++, kind, tx, ty, input: {}, output: {}, progress: 0, ...extra });
+    b('stockpile', 9, 13);
+    b('waterwheel', 13, 12);
+    b('sawmill', 11, 12, { powered: true, output: { plank: 3 } });
+    b('clamp', 9, 15, { output: { charcoal: 2 } });
+    b('furnace', 11, 15, { heat: 82, cold: false, output: { iron: 2 } });
+    b('blacksmith', 9, 17, { delivered: 4 });
+    b('flumeHead', 12, 10);
+    b('flume', 12, 11);
+    b('flume', 12, 12);
+    b('incline', 8, 14);
+    g.ground.push({ id: g.nextId++, tx: 10, ty: 13, resource: 'log', count: 2 });
+    g.player.x = 10.5;
+    g.player.y = 13.5;
+    window.__fw.movers.recomputeFlumePaths(g);
+    g.flumeItems.push({ id: g.nextId++, headId: g.buildings.find((x) => x.kind === 'flumeHead').id, resource: 'log', progress: 0.6 });
+  });
+  await sleep(500);
+  await page.screenshot({ path: `${OUT}/slice-buildings.png` });
+
   await page.keyboard.press('g'); // debug overlay
   await sleep(400);
   await page.screenshot({ path: `${OUT}/slice-overlay.png` });
