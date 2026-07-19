@@ -62,8 +62,8 @@ src/
                       Fixed-timestep loop, seeded RNG, terrain, movers, machines, save.
     render/         ← PixiJS only. No sim imports beyond read-only state. Iso projection,
                       tile contract, debug overlay.
-  components/       ← UI shell (letters, handcraft queue, cadence panels). Reads the store
-                      via narrow selectors.
+  ui/               ← Vanilla-TS HUD + input + view state (ADR 003 — no React in the MVP).
+                      Reads the store; the renderer + HUD poll it each frame.
 scripts/            ← Playwright verifiers (screenshot harness, per-feature checks).
 docs/               ← GDD, roadmap, decisions (ADRs), work logs. In .prettierignore.
 ```
@@ -243,5 +243,13 @@ Date: YYYY-MM-DD · Status: Accepted
   the **three desire-chain principles** (rhythm; convergence on steam; visible bottlenecks).
   Reframed the MVP closing beat as **the first town valve** (blacksmith demands iron) at zero scope
   cost. See `docs/work/2026-07-19-workshop-town-demand-pull.md`.
-- **Next:** M0 — scaffold the stack, iso terrace renderer spike, tile contract, debug overlay +
-  Playwright screenshot harness, pure sim skeleton. See `docs/ROADMAP.md`.
+- **MVP vertical slice shipped (2026-07-19, branch `feature/mvp-vertical-slice`).** M0–M5
+  compressed into one playable build: iso terraced world, fell/hand-saw, power-gated sawmill,
+  water flume + gravity incline + auto-feeders, blast furnace with going-cold/relight, company
+  letters + the blacksmith win valve, save/load. Vanilla-TS UI (ADR 003). 14 Vitest green;
+  Playwright verifier passes (incl. an in-browser furnace smelt); `pnpm dev` runs. A per-resource
+  buffer-cap bug (furnace couldn't be fueled) was caught by the completability test and fixed. See
+  `docs/work/2026-07-19-mvp-vertical-slice.md`.
+- **Next:** balance/feel pass after live play (constants in `src/lib/sim/constants.ts`), sound +
+  juice + nicer sprites, then the post-MVP arcs (demand-pull town, steam, rail, aqueducts) per
+  `docs/ROADMAP.md`.
