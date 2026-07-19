@@ -6,7 +6,7 @@ import { recomputeFlumePaths, tickFlume, tickIncline, tickFeeders } from './move
 import { actions, getGame, makeInitialState, checkLetters } from './store';
 import type { Building, GameState } from './types';
 
-function drive(g: GameState, fn: (dt: number) => void, seconds: number, stepMs = 100): void {
+function drive(fn: (dt: number) => void, seconds: number, stepMs = 100): void {
   const steps = Math.round((seconds * 1000) / stepMs);
   for (let i = 0; i < steps; i++) fn(stepMs);
 }
@@ -42,11 +42,11 @@ describe('sawmill power gating', () => {
     const g = makeInitialState(1);
     const mill = mkBuilding({ kind: 'sawmill', tx: 5, ty: 5, input: { log: 4 } });
     g.buildings.push(mill);
-    drive(g, (dt) => tickMachines(g, dt), 5);
+    drive((dt) => tickMachines(g, dt), 5);
     expect(mill.output.plank ?? 0).toBe(0); // unpowered
 
     g.buildings.push(mkBuilding({ kind: 'waterwheel', tx: 6, ty: 5 }));
-    drive(g, (dt) => tickMachines(g, dt), 5);
+    drive((dt) => tickMachines(g, dt), 5);
     expect(mill.output.plank ?? 0).toBeGreaterThan(0); // powered -> planks
   });
 });
@@ -66,13 +66,13 @@ describe('furnace heat / going cold', () => {
     });
     g.buildings.push(furnace);
 
-    drive(g, (dt) => tickMachines(g, dt), 25);
+    drive((dt) => tickMachines(g, dt), 25);
     expect(furnace.output.iron ?? 0).toBeGreaterThan(0);
     expect(furnace.cold).toBe(false);
 
     // Starve it of charcoal and let it cool.
     furnace.input.charcoal = 0;
-    drive(g, (dt) => tickMachines(g, dt), 60);
+    drive((dt) => tickMachines(g, dt), 60);
     expect(furnace.heat ?? 0).toBe(0);
     expect(furnace.cold).toBe(true);
   });
@@ -90,7 +90,7 @@ describe('flume transport', () => {
     expect(head.path?.length).toBe(3);
 
     g.flumeItems.push({ id: 1, headId: head.id, resource: 'log', progress: 0 });
-    drive(g, (dt) => tickFlume(g, dt), 3);
+    drive((dt) => tickFlume(g, dt), 3);
     expect((mill.input.log ?? 0) + g.ground.length).toBeGreaterThan(0);
     expect(mill.input.log ?? 0).toBe(1);
   });
@@ -102,14 +102,10 @@ describe('incline + feeders', () => {
     const inc = mkBuilding({ kind: 'incline', tx: 10, ty: 12, input: { ore: 6 }, inclineTimer: 0 });
     const furnace = mkBuilding({ kind: 'furnace', tx: 11, ty: 12, heat: 50, cold: false });
     g.buildings.push(inc, furnace);
-    drive(
-      g,
-      (dt) => {
-        tickIncline(g, dt);
-        tickFeeders(g);
-      },
-      6,
-    );
+    drive((dt) => {
+      tickIncline(g, dt);
+      tickFeeders(g);
+    }, 6);
     expect(furnace.input.ore ?? 0).toBeGreaterThan(0);
   });
 });
@@ -150,6 +146,42 @@ describe('progression', () => {
     g.buildings.push(mkBuilding({ kind: 'blacksmith', tx: 5, ty: 28, delivered: 10 }));
     checkLetters(g);
     expect(g.won).toBe(true);
+  });
+});
+
+describe('player verbs', () => {
+  beforeEach(() => actions.init(1));
+
+  it('chops a tree into logs, then hand-saws banked planks', () => {
+    const g = getGame();
+    const tree = g.trees.find((t) => t.state === 'tree')!;
+    g.player.x = tree.tx + 0.5;
+    g.player.y = tree.ty + 0.5;
+    actions.interact(); // begin chop
+    for (let i = 0; i < 20; i++) actions.updateAction(100);
+    expect(g.player.carry).toBe('log');
+    expect(g.player.carryCount).toBeGreaterThan(0);
+
+    const logs = g.player.carryCount;
+    for (let s = 0; s < logs; s++) {
+      actions.handSaw();
+      for (let i = 0; i < 15; i++) actions.updateAction(100);
+    }
+    expect(g.bank.plank).toBeGreaterThanOrEqual(logs);
+    expect(g.player.carryCount).toBe(0);
+  });
+
+  it('deposits carried logs into an adjacent flume head as riding items', () => {
+    const g = getGame();
+    // give the player logs and stand next to a flume head
+    g.player.carry = 'log';
+    g.player.carryCount = 3;
+    g.buildings.push({ id: 555, kind: 'flumeHead', tx: 8, ty: 8, input: {}, output: {}, progress: 0 });
+    g.player.x = 8.5;
+    g.player.y = 8.5;
+    actions.deposit();
+    expect(g.flumeItems.length).toBe(3);
+    expect(g.player.carryCount).toBe(0);
   });
 });
 

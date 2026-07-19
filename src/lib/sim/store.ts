@@ -447,7 +447,7 @@ export function checkLetters(g: GameState): void {
   if (g.won) return;
   const letter = g.letters.find((l) => l.id === g.activeLetterId);
   if (!letter || letter.done) return;
-  let satisfied = false;
+  let satisfied: boolean;
   if (letter.sink === 'company') {
     satisfied = (g.bank[letter.wantResource] ?? 0) >= letter.wantCount;
   } else {

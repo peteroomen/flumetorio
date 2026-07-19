@@ -56,7 +56,7 @@ export function generateWorld(seed: number): World {
   for (let ty = 0; ty < MAP_H; ty++) {
     const height = bandHeight(ty);
     for (let tx = 0; tx < MAP_W; tx++) {
-      let terrain: Tile['terrain'] = 'grass';
+      let terrain: Tile['terrain'];
       if (isRiver(tx, ty)) {
         terrain = 'water';
       } else if (height === HEIGHT_TOP) {
