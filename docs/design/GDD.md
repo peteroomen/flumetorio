@@ -37,6 +37,18 @@ builders), and vice versa. Nobody has shipped batch-era logistics as the automat
   we cheat *in fiction* — pneumatic tubes, difference-engine control, hydraulic mains — always
   late-game, always earned, never bulk-scale.
 
+### Art direction
+
+- **Flat, minimalist, geometric** — the shapez lineage, rendered in 2:1 dimetric iso (ADR 002).
+  Clean flat-shaded shapes over textured realism: it reads instantly at automation scale, keeps
+  cargo/mover states legible, ages well, and — not incidentally — makes the machine *watchable*
+  (pillar §3.5) without fighting visual noise.
+- This also aligns with the build plan: programmer art (flat colored diamonds, labeled shapes) is
+  the *starting* aesthetic in M0, not just a placeholder — the finished look is a refinement of it,
+  not a replacement. Low art risk, coherent from day one.
+- Palette carries the tone (soot, drizzle, gaslight, smog); geometry carries the readability. Warm
+  emissive accents (furnace glow, lit windows) punctuate a cool muted field.
+
 ---
 
 ## 3. Design pillars
@@ -261,6 +273,9 @@ a flume, an incline, and a charcoal clamp compels for 30 minutes, the whole game
 - **Log jams** — river drives with jam events: fun failure or annoyance? (post-MVP)
 - **How hard is "must not go cold"?** — relight cost tuning; does the MVP furnace bank down
   gracefully or die?
-- **Name.** Flumeworks is a working title.
+- **Name.** The repo is `flumetorio` (a deliberately tortured placeholder — "flume" + "-torio"
+  from the genre's naming meme). It needs a real, less-derivative name before anything ships.
+  Candidates should evoke the terrain-grain / batch-flow / Victorian-works identity without
+  leaning on the Factorio suffix. "Flumeworks" is one earlier working title in the mix.
 - **People on screen at all?** Towns are ambient; do works have visible (non-interactive) crews,
   or is machinery self-acting? Leans empty; revisit after MVP art pass.

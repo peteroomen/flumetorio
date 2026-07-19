@@ -1,4 +1,4 @@
-# Flumeworks (working title)
+# flumetorio (placeholder name — see GDD §14)
 
 A batch-native automation game in a Victorian / soft-steampunk register: **Factorio's brain,
 Railroad Tycoon's heart, Frostpunk's soul (minus the cold)**. You hold a Company concession over a
