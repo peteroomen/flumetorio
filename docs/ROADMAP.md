@@ -99,7 +99,10 @@ GDD §12 beats 20:00–40:00 + framing.
 - Company letters: concession intro, 4–5 deliver-X-for-drawings unlocks pacing M1→M4 content.
 - Cadence instrumentation v1: burn rate vs delivery rhythm per consumer; starvation forecast.
 - Forestry replant cycle (wood must be farmable).
-- Closing beat: first iron → one cottage spawns, lit window, smoke.
+- Closing beat — **the first town valve** (GDD §8/§10): the delivery target *is* the blacksmith's
+  demand ("The blacksmith has opened. It wants iron."); supplying it lights the forge and spawns
+  the cottage. One establishment, demand + visible yield, **no town internals** — plants the
+  demand-pull spine as the hook to post-MVP.
 - Balance pass on the 40-minute arc; full playthrough recorded.
 - **The fun gate:** structured playtest of minutes 20–40. Written verdict in `docs/work/`.
 
@@ -115,11 +118,17 @@ either way (ADR 001 commits us to this checkpoint).
 
 **Parking lot** (each future slice must name its desire chain, GDD §11):
 
+- **The demand-pull town (the primary post-MVP arc, GDD §8/§10)** — multi-establishment growth,
+  concurrent demands as branching, the symbiotic tool-feedback loop (needs the progression model),
+  town-as-blueprint-source. This is the spine everything else hangs demands off.
+- Water as a scarce resource → reservoirs, leats, **aqueducts** (the marquee build), pumps — the
+  chains that converge on steam (GDD §11)
 - Rope haulage + steam debut (the first uphill-load wall) → coal, mines, pumping engines
 - Horse tramways · narrow-gauge steam · mainline rail (yards, signals, gradients)
 - Barrels/cooperage → tally-shed sorting → empties-return loop (the flagship chain)
 - River log-drives + jams · canals + locks · harbors + sailing ships + regions
-- Aerial ropeways · hydraulic mains · pneumatic tubes
-- Automated crafting (workshops/manufactories)
-- Company towns as living demand sinks · contracts-as-choice branching
-- Weather, trade winds · art pass against the frozen tile contract · name the game
+- Aerial ropeways · hydraulic mains · pneumatic tubes (item movement)
+- Automated crafting (workshops/manufactories) · **town auto-build/haul service** (the "bots"
+  analogue — a supplied Works office, not a drone swarm)
+- Weather, trade winds · art pass against the frozen tile contract · **name the game** (retire
+  `flumetorio`)

@@ -13,8 +13,12 @@ An automation-first game — belts-and-machines DNA, growing factory, throughput
 Victorian / soft-steampunk skin. You hold a Company concession over a terraced valley. Logs ride
 water flumes downhill, ore carts ride self-acting gravity inclines, a waterwheel spins your first
 line shaft, and the blast furnace eats in charges and **must never go cold**. Later: narrow-gauge
-trams, mainline rail, canals with locks, sailing ships to new regions, aerial ropeways, hydraulic
-mains, pneumatic tubes.
+trams, mainline rail, canals with locks, aqueducts striding over rivers, sailing ships to new
+regions, aerial ropeways, hydraulic mains, pneumatic tubes.
+
+**What are you feeding?** Not a rocket — a **town**. Half your world you design (the factory); half
+grows around it (the town you supply but never manage). It asks for goods, grows when you deliver,
+and asks for more — a living, escalating demand that pulls your whole supply web into being.
 
 **The market gap:** the automation genre clusters into sci-fi (Factorio, Satisfactory, DSP,
 Techtonica), abstract (shapez), and cozy-fantasy (Factory Town). The adjacent games with the right
@@ -73,6 +77,11 @@ builders), and vice versa. Nobody has shipped batch-era logistics as the automat
 6. **Pressure without enemies.** No combat, ever. The antagonist is entropy and gradient: furnaces
    going cold, mines flooding, cadence starving. (Owner and most logistics-brains turn Factorio's
    biters off; we design for that player.)
+7. **Demand-pull, not supply-push.** Factorio hands you a fixed goal (the rocket) and you push
+   toward it. Here the world *asks* — the growing town emits living demands you scramble to supply,
+   and satisfying them reshapes the world (§8, §10). What you're feeding is a place that grows back
+   and needs more, not a distant one-shot. This is the game's answer to "what's the point," and its
+   pacing engine.
 
 ---
 
@@ -93,8 +102,17 @@ The "belt tier list". Ordered roughly by unlock; MVP-scope movers marked ★.
 | Mainline rail | batch | big rakes, long haul; water towers + coaling stages en route | the backbone; yards, signals, gradients at scale |
 | Aerial ropeway | quasi-continuous | powered, straight-line pylons, low throughput, any terrain incl. uphill | the closest thing to a true belt; earned mid-late |
 | Canal + **locks** | batch | slow, colossal capacity; locks are engineered chokepoints | bulk inland tier |
+| **Aqueduct** | carries flume/canal | a water route (flume or navigable canal) held aloft across a valley/river on piers | the tentpole build — see below; flumes are its small kin |
 | Sailing ship | batch | inter-region; harbors; wind/weather later | the outer scaling ring (§9) |
-| Pneumatic tube | continuous | small high-value goods only, late-game, steampunk licence | the "logistics bots" analogue |
+| Pneumatic tube | continuous | small high-value goods only, late-game, steampunk licence | the "logistics bots" analogue (item movement) |
+
+**Aqueducts** are the water network's tentpole. A flume is already a tiny aqueduct — a trough on
+trestles holding a grade. Scale that up and it becomes the marquee build: a masonry aqueduct
+carrying a **flume line** (or, late, a **navigable canal**, boats and all — Pontcysyllte-style)
+*over* a river or valley the terrain grain would otherwise forbid. It's how you defeat a grain you
+can't route around: expensive, spectacular, and it lets water — the scarce routing resource (§5) —
+cross the map. The owner wants to build one over a river; the game should make that a memorable
+milestone, not a footnote.
 
 **Drive-type ladder for tramways** (each rung removes a constraint, adds an obligation):
 player-push → horse → self-acting gravity incline → rope haulage (coal+water) → locomotive.
@@ -120,6 +138,19 @@ Windmills as a sibling of waterwheels (pumping, milling) — quietly seeds the s
 **Coal + water are the energy economy AND the transport fuel** — every engine on the map is a
 mouth to feed, and the network that feeds the mouths is itself made of things with mouths. This
 recursion is the game's power-grid pressure.
+
+### Water as a routed resource
+
+Water is medium, reagent, and coolant at once: it drives wheels, floats flumes, and *becomes*
+steam. Early it's free (tap the river). At scale it's the game's most elegant constraint — see the
+water desire chain in §11 — and its infrastructure is a whole logistics layer parallel to goods:
+
+- **Leats / channels** route water along a grade (the flume feeder generalized).
+- **Reservoirs** buffer it — you size a reservoir against draw the same way you size a bunker
+  against burn (cadence applies to water itself).
+- **Aqueducts** (§4) carry it across terrain the grain forbids.
+- **Pumps** lift or recycle it — and pumps need power, which pushes you toward steam, which needs
+  water. The loop closes on purpose.
 
 ---
 
@@ -160,15 +191,28 @@ recursion is the game's power-grid pressure.
 
 ## 8. Progression
 
-- **MVP: Company letters.** Deliver X goods → the Company sends drawings (blueprint unlock). No
-  science packs. 4–5 unlocks total in the MVP; linear is fine at that length.
-- **Known weakness (owner-flagged, agreed): deliver-for-blueprint lacks branching long-term.**
-  Parked candidate fix: **multiple concurrent contracts, fulfil-to-choose** — the Company (or
-  rival concerns) offers several standing requests; which one you tool up to satisfy *is* the
-  branch. Possibly blended with an in-house drawing office (self-directed research) later.
-  Open question §13 — not a commitment.
-- Steam, rail, ships, towns each arrive as the *answer to a felt bottleneck*, never as a menu
-  item that got cheap enough (§11).
+**The spine is demand-pull via the town (§10, pillar §3.7).** As the town grows it opens
+establishments, each of which *demands* goods and *yields* capability when supplied. Progression is
+the loop: supply a demand → the town grows / yields a blueprint / yields a good you now need → new
+establishments open with new demands. The tech tree is pulled into being by what the town asks for,
+not pushed by a fixed research menu.
+
+- **Branching falls out for free (resolves the old §8 weakness).** A growing town emits *multiple
+  concurrent demands* you can't all serve at once — *which you tool up for first is the branch*:
+  the blacksmith (→ tools → faster extraction, an efficiency path) vs the gasworks (→ the town
+  grows faster, an expansion path) vs the railway office (→ rail unlocked early, a logistics path).
+  Emergent build-order branching from a living demand set — the "multiple contracts, fulfil-to-
+  choose" idea, embodied in a *place* instead of a menu.
+- **Two-tier sinks (near + far).** The *town* is the near sink: living, local, symbiotic. The
+  *Company / export market* is the far sink: ship surplus away by rail and sea for money and
+  prestige — the abstract, infinitely-scaling "rocket" for when the town is momentarily sated, and
+  the pull that carries you out to new regions (§9). The factory always has somewhere to push
+  output, at both the intimate and epic scale.
+- **MVP progression** is a thin slice of this: the Company grants the concession, and the target is
+  the town's *first* establishment demand — **"The blacksmith has opened. It wants iron."** Same
+  simple deliver-N mechanic as a letter, but it plants the whole spine (§12–13). 4–5 unlocks total.
+- Steam, rail, ships each still arrive as the *answer to a felt bottleneck*, never as a menu item
+  that got cheap enough (§11).
 
 ---
 
@@ -188,12 +232,44 @@ recursion is the game's power-grid pressure.
 
 ---
 
-## 10. Company towns
+## 10. Company towns — the demand-pull engine
 
-Owner-approved direction: no town *management*, towns as **consequence and reward**. Terraced
-rows accrete near a big works; gaslights come on at dusk; a chapel, a pub. They are demand sinks
-and a visual pulse of progress — never conversations. First appearance is scripted into the MVP's
-closing beat: one worker's cottage, one lit window, when the first iron is tapped.
+The town is **the sink, the pacing engine, and the emotional core** (pillar §3.7) — not decoration.
+Half your world is *designed* (the factory you lay out) and half *grows* around it (the town you
+supply but never place). It gives Frostpunk's warmth — a settlement you keep alive and watch bloom
+— without the survival misery: a starved town doesn't die (no fail states, §3.6), it just waits,
+quietly, for you to connect the supply line. The pressure is **desire**, not survival.
+
+**Establishments are demand valves.** Each town building is a black box with an ongoing **demand**
+(goods it wants, delivered to its receiving dock) and a **yield** when supplied:
+
+- **Population growth** → the next establishment opens → new demands. The town escalates itself.
+- **A good you re-consume (symbiotic — owner-confirmed).** The blacksmith eats iron + coal and
+  yields **tools**; tools make miners/lumberjacks faster or are *required* to build higher machines.
+  The town becomes a **node in your production graph** — you feed it raw, it feeds you refined, you
+  feed it more. Introduce this *gradually*: the earliest establishments are pure sinks that just
+  grow the town; the tools-feed-back-in loop arrives a tier or two later. Balance via the
+  progression model (as in prior projects).
+- **Blueprints / licences** — a drawing office, a guild: absorbs the deliver-for-blueprint mechanic
+  into the town, organically.
+- **Land / access** — satisfying the town grants new terraces, harbour rights (the gate to §9's
+  sea and regions).
+
+**Late-game automation lives in the town, too (owner idea).** The "logistics/construction bots"
+analogue is not a swarm of drones — it's a late town establishment (a **Works / Building Office**)
+that, once supplied, provides an **auto-build / auto-haul service** across your concession. Thematic,
+on-brand (you don't get robots, you get a *municipal service*), and it keeps even endgame automation
+routed through the town symbiosis. (Distinct from pneumatic tubes, which move *items*; this builds
+and maintains *structures*.)
+
+**The guardrail — this is what keeps it from becoming a city-builder.** You interact with the town
+**only through logistics**: route, deliver, buffer. You never place a building, staff it, zone it,
+or manage citizen happiness. The town is autonomous and opaque — it emits demands and grows or
+waits. Any feature that has you micromanaging the town's *insides* is a different game and is out of
+scope. This preserves the loneliness and the automation-first identity.
+
+**MVP appearance:** the closing beat is the *first valve*, not decoration — the blacksmith opens,
+issues the first demand (iron), and the cottage/works lights up when supplied (§12–13).
 
 ---
 
@@ -214,6 +290,30 @@ The flagship chain (post-MVP, from one "QoL" unlock):
 Six hungers from one unlock. The MVP contains a miniature: sawmill removes sawing → makes
 carrying the felt bottleneck → flume removes carrying → makes felling throughput and furnace
 cadence the bottleneck. Every future system proposal should name its chain before it lands.
+
+**Three design principles for chains:**
+
+1. **Rhythm, not constant grind — relief, relief, HUNGER.** If every unlock spawns a new problem
+   the player never exhales. Most unlocks are breathing room (bigger/faster/cheaper); the chains
+   are the occasional spikes that upend a layer.
+2. **Chains converge on tentpoles.** The best structure is *several* chains quietly pointing at the
+   same big infrastructure beat, so it feels earned from every direction at once. **Steam is the
+   canonical convergence:**
+   - *Water chain* — flumes and wheels sip the river; build enough and the river visibly drops (a
+     downstream wheel slows, a downstream flume runs dry). Water becomes contested and routed
+     (reservoirs, leats, aqueducts); lifting/recycling it needs pumps → pumps need power beyond the
+     shrinking river → **steam**.
+   - *Fuel chain* — MVP fuel is charcoal from wood, but wood now feeds planks *and* charcoal *and*
+     the town, and the forest is finite per replant. Contention drives you to a denser separate
+     fuel → coal → mines → mines flood → pumping (→ water chain again) → **steam**.
+   - *Power-radius chain* — the waterwheel's line shaft is short, cramping the factory against the
+     river; you want to spread out → **steam** cuts the tether.
+   Steam then consumes the very water you're short of *plus* the coal you just started mining — so
+   it's not a checkbox, it's the answer to three simultaneous pressures. Rail and the sea are later
+   convergence tentpoles.
+3. **The bottleneck must be physical and visible** (legibility, §3.5): barrels piling at the flume
+   tail, the river running low, the furnace glow dimming. You *see* the constraint before UI names
+   it.
 
 ---
 
@@ -244,8 +344,11 @@ the player personally resents; resentments are scheduled in ranked order.
   of the letter, and the game's thesis, as UI: *“A furnace, once lit, must not go cold.”*
 - **20:00–40:00 — The sustain loop.** Keep the fire fed off a flume, an incline, and a clamp.
   **This loop being compulsive is the entire hypothesis under test.**
-- **Closing tease:** first iron tapped → one worker's cottage appears down-valley, lit window,
-  chimney smoke. Nobody to talk to. The town has begun.
+- **Closing beat — the first valve:** the Company letter's target *is* the town's first
+  establishment. **"The blacksmith has opened. It wants iron."** Deliver the iron (same simple
+  mechanic as any letter) → the smithy's forge lights, a cottage appears down-valley, lit window,
+  chimney smoke. Nobody to talk to — but the town has begun, and the demand-pull spine (§8, §10) is
+  revealed as the hook into the next session.
 
 ---
 
@@ -254,12 +357,16 @@ the player personally resents; resentments are scheduled in ranked order.
 **In:** terraced map (3 levels) · trees + felling + replant · barrow-carry · pit saw · waterwheel
 + line-shaft reach · sawmill · **flume** (trestles + feeder channel + head-gate) · charcoal clamp
 · ore outcrop · self-acting incline with carts · batch furnace with going-cold penalty ·
-chutes/hoppers · Factorio-style handcrafting · Company-letter progression (4–5 unlocks) · one
-cottage spawn · debug overlay + screenshot harness (ADR 002).
+chutes/hoppers · Factorio-style handcrafting · Company-letter progression (4–5 unlocks) · **the
+first town valve** (blacksmith opens → demands iron → lights up when supplied — one establishment,
+demand + visible yield, no town internals) · debug overlay + screenshot harness (ADR 002).
 
 **Out (ruthlessly):** rail + locomotives · rope haulage · horses · coal/mines/pumping · ships,
-canals, locks · ropeways · pneumatic tubes · barrels/cooperage/tally shed · river log-driving ·
-automated crafting · real town simulation · weather · research trees · enemies (forever).
+canals, locks · **aqueducts** · ropeways · pneumatic tubes · barrels/cooperage/tally shed · river
+log-driving · automated crafting · **town auto-build service** · water-as-scarce-resource
+(reservoirs/leats/pumps) · **multi-establishment town + symbiotic tool loop** · real town
+simulation/management · weather · research trees · enemies (forever). *(The MVP ships exactly one
+demand valve to plant the spine — the full demand-pull town, §8/§10, is the primary post-MVP arc.)*
 
 **Success criterion:** minutes 20–40 — the sustain loop — is fun. If keeping one furnace fed off
 a flume, an incline, and a charcoal clamp compels for 30 minutes, the whole game works.
@@ -268,7 +375,15 @@ a flume, an incline, and a charcoal clamp compels for 30 minutes, the whole game
 
 ## 14. Open questions
 
-- **Progression branching** — contracts-as-choice? drawing office? hybrid? (§8)
+- ~~**Progression branching**~~ — *resolved:* demand-pull via the town's concurrent demands (§8).
+- ~~**Symbiotic vs pure-sink town**~~ — *resolved:* symbiotic, introduced gradually (§10).
+- **Town balance** — the symbiotic tool-feedback loop (town yields tools → faster extraction →
+  more supply → faster town growth) is a positive feedback loop; needs the progression model to
+  keep it from running away or stalling. (Owner: "we can always use modelling to balance it.")
+- **Aqueduct scope** — navigable (boats cross a valley) vs water-supply-only (a flume/leat aloft)?
+  Both are wanted; which lands first, and how big a build is the marquee one? (§4)
+- **Auto-build service shape** — radius from the Works office? queue-based? what does it cost to
+  run (a standing goods demand, keeping it in the symbiosis)? (§10)
 - **Trade winds** — do sea routes get their own grain (fast/slow directions)? (§9)
 - **Log jams** — river drives with jam events: fun failure or annoyance? (post-MVP)
 - **How hard is "must not go cold"?** — relight cost tuning; does the MVP furnace bank down

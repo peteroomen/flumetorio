@@ -102,7 +102,13 @@ sim; per-tick visuals are driven imperatively (never re-render React per frame).
 ## Design Conventions
 
 - **Every unlock names its desire chain** (GDD §11) before it lands: what mouth does it add, or
-  what new inefficiency does it expose? Pure-relief unlocks get redesigned.
+  what new inefficiency does it expose? Pure-relief unlocks get redesigned. Chains follow
+  relief-relief-HUNGER rhythm and converge on tentpoles (steam, rail, sea).
+- **Demand-pull, not supply-push** (GDD §3.7/§8/§10) — progression is the town asking and you
+  supplying. The town is the sink.
+- **The town guardrail** — you interact with the town *only through logistics* (route, deliver,
+  buffer). Never place/staff/zone/manage its internals. Any feature that micromanages the town's
+  insides is out of scope (that's a city-builder, not this game).
 - **No enemies. No electricity.** Pressure is entropy and gradient; power is shafts, steam,
   hydraulics, air.
 - **The terrain has a grain** — never add a mover that ignores height for free.
@@ -226,7 +232,16 @@ Date: YYYY-MM-DD · Status: Accepted
 
 > **Update this section at the end of every session** — what shipped, what's next.
 
-- **Phase:** repo bootstrapped (2026-07-19) — docs only. GDD, roadmap, ADRs 001–002, and this
-  file landed as the initial commit; no application code exists yet.
+- **Phase:** repo bootstrapped (2026-07-19) — docs only. No application code exists yet.
+- **Design workshop round 2 (2026-07-19):** locked the **demand-pull town** as the progression
+  spine and emotional core (new pillar §3.7; rewrote GDD §8 + §10) — the town is the sink, emits
+  concurrent demands (which resolves the branching open question), yields symbiotically (goods you
+  re-consume, e.g. blacksmith→tools→faster extraction — introduced gradually, balance via model),
+  and hosts the late-game **auto-build/haul service** (the "bots" analogue, not a drone swarm).
+  Hard guardrail: interact via logistics only, never manage town internals. Added **aqueducts**
+  (the marquee water-network build) + **water as a routed resource** (reservoirs/leats/pumps) and
+  the **three desire-chain principles** (rhythm; convergence on steam; visible bottlenecks).
+  Reframed the MVP closing beat as **the first town valve** (blacksmith demands iron) at zero scope
+  cost. See `docs/work/2026-07-19-workshop-town-demand-pull.md`.
 - **Next:** M0 — scaffold the stack, iso terrace renderer spike, tile contract, debug overlay +
   Playwright screenshot harness, pure sim skeleton. See `docs/ROADMAP.md`.
