@@ -1,9 +1,9 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import { generateWorld, bandHeight, heightAt } from './world';
 import { HEIGHT_BOTTOM, HEIGHT_MID, HEIGHT_TOP } from './constants';
-import { tickMachines, bankAllOutputs } from './machines';
-import { recomputeFlumePaths, tickFlume, tickIncline, tickFeeders } from './movers';
-import { actions, getGame, makeInitialState, checkLetters } from './store';
+import { tickMachines } from './machines';
+import { recomputeFlumePaths, tickFlume, tickIncline, tickTransfers } from './movers';
+import { actions, getGame, makeInitialState, checkLetters, ownedTotals } from './store';
 import { placementError } from './buildings';
 import { buildingStatus, isDropTargetKind, promptFor } from './status';
 import type { Building, BuildingKind, GameState } from './types';
@@ -106,30 +106,55 @@ describe('incline + feeders', () => {
     g.buildings.push(inc, furnace);
     drive((dt) => {
       tickIncline(g, dt);
-      tickFeeders(g);
+      tickTransfers(g);
     }, 6);
     expect(furnace.input.ore ?? 0).toBeGreaterThan(0);
   });
 });
 
-describe('output banking', () => {
-  it('banks a sawmill output when a stockpile sits beside it', () => {
+describe('chests (stockpiles)', () => {
+  it('collects a machine output into an adjacent chest', () => {
     const g = makeInitialState(1);
     const mill = mkBuilding({ kind: 'sawmill', tx: 5, ty: 25, output: { plank: 3 } });
-    g.buildings.push(mill, mkBuilding({ kind: 'stockpile', tx: 6, ty: 25 }));
-    bankAllOutputs(g);
-    expect(g.bank.plank).toBe(3);
+    g.buildings.push(mill, mkBuilding({ kind: 'stockpile', tx: 6, ty: 25, store: {} }));
+    tickTransfers(g);
+    const chest = g.buildings.find((b) => b.kind === 'stockpile')!;
+    expect(chest.store?.plank).toBe(3);
     expect(mill.output.plank ?? 0).toBe(0);
+  });
+
+  it('feeds an adjacent machine from a chest', () => {
+    const g = makeInitialState(1);
+    const chest = mkBuilding({ kind: 'stockpile', tx: 5, ty: 25, store: { log: 5 } });
+    const mill = mkBuilding({ kind: 'clamp', tx: 6, ty: 25 });
+    g.buildings.push(chest, mill);
+    tickTransfers(g);
+    expect((mill.input.log ?? 0) + (chest.store?.log ?? 0)).toBe(5);
+    expect(mill.input.log ?? 0).toBeGreaterThan(0);
+  });
+
+  it('a flume tail deposits into an adjacent chest (the reported bug)', () => {
+    const g = makeInitialState(1);
+    const head = mkBuilding({ kind: 'flumeHead', tx: 5, ty: 5 });
+    const t1 = mkBuilding({ kind: 'flume', tx: 5, ty: 6 });
+    const chest = mkBuilding({ kind: 'stockpile', tx: 6, ty: 6, store: {} });
+    g.buildings.push(head, t1, chest);
+    recomputeFlumePaths(g);
+    g.flumeItems.push({ id: 1, headId: head.id, resource: 'log', progress: 0 });
+    drive((dt) => tickFlume(g, dt), 3);
+    expect(chest.store?.log).toBe(1);
+    expect(g.ground.length).toBe(0);
   });
 });
 
 describe('progression', () => {
   beforeEach(() => actions.init(3));
 
-  it('completes the first letter and unlocks the waterwheel + sawmill', () => {
+  it('completes the first letter when planks are shipped to the Wharf', () => {
     const g = getGame();
     expect(g.unlocked).not.toContain('sawmill');
-    g.bank.plank = 8;
+    const wharf = g.buildings.find((b) => b.kind === 'wharf')!;
+    wharf.shipped = { plank: 8 };
     checkLetters(g);
     const first = g.letters[0];
     expect(first.done).toBe(true);
@@ -140,8 +165,8 @@ describe('progression', () => {
 
   it('wins when 10 iron is delivered to the blacksmith', () => {
     const g = getGame();
-    // fast-forward the plank letters
-    g.bank.plank = 40;
+    // fast-forward the plank letters by shipping to the Wharf
+    g.buildings.find((b) => b.kind === 'wharf')!.shipped = { plank: 40 };
     checkLetters(g);
     checkLetters(g);
     checkLetters(g);
@@ -154,7 +179,7 @@ describe('progression', () => {
 describe('player verbs', () => {
   beforeEach(() => actions.init(1));
 
-  it('chops a tree into logs, then a pit saw turns them into banked planks', () => {
+  it('chops a tree into logs, then a pit saw turns them into planks in a chest', () => {
     const g = getGame();
     const tree = g.trees.find((t) => t.state === 'tree')!;
     g.player.x = tree.tx + 0.5;
@@ -164,13 +189,27 @@ describe('player verbs', () => {
     expect(g.player.carry).toBe('log');
     expect(g.player.carryCount).toBeGreaterThan(0);
 
-    // Build a pit saw (free, unlocked from start) + a stockpile beside it to bank planks.
-    expect(actions.place('pitsaw', 6, 25)).toBeNull();
-    expect(actions.place('stockpile', 7, 25)).toBeNull();
-    const saw = g.buildings.find((b) => b.kind === 'pitsaw')!;
-    saw.input.log = 3;
+    // A pit saw with a chest beside it: logs → planks → chest.
+    g.buildings.push(mkBuilding({ kind: 'pitsaw', tx: 6, ty: 25, input: { log: 3 } }));
+    const chest = mkBuilding({ kind: 'stockpile', tx: 7, ty: 25, store: {} });
+    g.buildings.push(chest);
     for (let i = 0; i < 140; i++) actions.simStep(100);
-    expect(g.bank.plank).toBeGreaterThan(0); // pit saw (unpowered) produced + banked planks
+    expect(chest.store?.plank ?? 0).toBeGreaterThan(0); // pit saw (unpowered) produced; chest caught it
+  });
+
+  it('builds using materials from a nearby chest (cost model A)', () => {
+    const g = getGame();
+    g.unlocked.push('waterwheel');
+    // a chest of planks by the build site; a waterwheel costs 6 planks
+    g.buildings.push(mkBuilding({ kind: 'stockpile', tx: 15, ty: 24, store: { plank: 10 } }));
+    // find a valid riverbank tile within reach of the chest
+    let placed: string | null = 'no spot';
+    for (let ty = 22; ty <= 26 && placed; ty++)
+      for (let tx = 13; tx <= 18 && placed; tx++)
+        if (placementError(g, 'waterwheel', tx, ty) === null) placed = actions.place('waterwheel', tx, ty);
+    expect(placed).toBeNull(); // paid from the chest
+    const chest = g.buildings.find((b) => b.kind === 'stockpile')!;
+    expect(chest.store?.plank).toBe(4); // 10 - 6
   });
 
   it('deposits carried logs into an adjacent flume head as riding items', () => {
@@ -220,44 +259,40 @@ describe('completable valley (seed 1)', () => {
     }
     return null;
   }
-  const find = (g: GameState, tx: number, ty: number) => g.buildings.find((b) => b.tx === tx && b.ty === ty)!;
-
   it('builds the automated furnace line on the real map and smelts iron', () => {
     actions.init(1);
     const g = getGame();
-    g.unlocked = ['stockpile', 'waterwheel', 'sawmill', 'flumeHead', 'flume', 'clamp', 'incline', 'furnace', 'blacksmith'];
-    g.bank.plank = 999;
+    const push = (kind: BuildingKind, tx: number, ty: number, extra: Partial<Building> = {}) => {
+      const b = mkBuilding({ kind, tx, ty, ...extra });
+      g.buildings.push(b);
+      return b;
+    };
 
-    // Powered sawmill + banking stockpile on the works terrace.
+    // Powered sawmill + collecting chest on the works terrace.
     const ww = validSpot(g, 'waterwheel', 22, 32)!;
     expect(ww, 'a riverbank tile exists').toBeTruthy();
-    expect(actions.place('waterwheel', ww.tx, ww.ty)).toBeNull();
+    push('waterwheel', ww.tx, ww.ty);
     const mill = validSpot(g, 'sawmill', 22, 32, (tx, ty) => Math.hypot(tx - ww.tx, ty - ww.ty) <= 4)!;
     expect(mill, 'a sawmill fits within power reach').toBeTruthy();
-    expect(actions.place('sawmill', mill.tx, mill.ty)).toBeNull();
+    push('sawmill', mill.tx, mill.ty, { input: { log: 6 } });
     const millPile = neighborSpot(g, 'stockpile', mill)!;
-    expect(actions.place('stockpile', millPile.tx, millPile.ty)).toBeNull();
-
-    const beforePlank = g.bank.plank;
-    find(g, mill.tx, mill.ty).input.log = 6;
+    const chest = push('stockpile', millPile.tx, millPile.ty, { store: {} });
     for (let i = 0; i < 140; i++) actions.simStep(100);
-    expect(g.bank.plank).toBeGreaterThan(beforePlank); // powered sawmill banked planks
+    expect(chest.store?.plank ?? 0).toBeGreaterThan(0); // powered sawmill → chest
 
     // Automated furnace: incline (ore) + clamp (charcoal) feeding one furnace.
     const inc = validSpot(g, 'incline', 19, 21)!;
     expect(inc, 'a cliff-edge incline site exists near the ore').toBeTruthy();
-    expect(actions.place('incline', inc.tx, inc.ty)).toBeNull();
+    push('incline', inc.tx, inc.ty, { inclineTimer: 0, input: { ore: 12 } });
     const furn = neighborSpot(g, 'furnace', inc)!;
     expect(furn, 'a furnace fits beside the incline').toBeTruthy();
-    expect(actions.place('furnace', furn.tx, furn.ty)).toBeNull();
+    const furnB = push('furnace', furn.tx, furn.ty, { heat: 0, cold: true, fuelTimer: 0, relighting: 0 });
     const clamp = neighborSpot(g, 'clamp', furn, [inc])!;
     expect(clamp, 'a clamp fits beside the furnace').toBeTruthy();
-    expect(actions.place('clamp', clamp.tx, clamp.ty)).toBeNull();
+    push('clamp', clamp.tx, clamp.ty, { input: { log: 8 } });
 
-    find(g, inc.tx, inc.ty).input.ore = 12;
-    find(g, clamp.tx, clamp.ty).input.log = 8;
     for (let i = 0; i < 450; i++) actions.simStep(100);
-    expect(find(g, furn.tx, furn.ty).output.iron ?? 0).toBeGreaterThan(0); // iron smelted on the real map
+    expect(furnB.output.iron ?? 0).toBeGreaterThan(0); // iron smelted on the real map
   });
 });
 
@@ -305,21 +340,48 @@ describe('guidance derivations', () => {
     expect(buildingStatus(g, hot)?.want).toBe('ore');
   });
 
-  it('a blacksmith beside a stockpile draws banked iron toward the goal', () => {
+  it('a blacksmith draws iron from an adjacent chest toward the goal', () => {
     const g = getGame();
     g.buildings.push(mkBuilding({ kind: 'blacksmith', tx: 5, ty: 25 }));
-    g.buildings.push(mkBuilding({ kind: 'stockpile', tx: 6, ty: 25 }));
-    g.bank.iron = 4;
+    const chest = mkBuilding({ kind: 'stockpile', tx: 6, ty: 25, store: { iron: 4 } });
+    g.buildings.push(chest);
     for (let i = 0; i < 6; i++) actions.simStep(100);
     const smith = g.buildings.find((b) => b.kind === 'blacksmith')!;
     expect(smith.delivered ?? 0).toBeGreaterThan(0);
-    expect(g.bank.iron).toBeLessThan(4);
+    expect(chest.store?.iron ?? 0).toBeLessThan(4);
   });
 
-  it('knows valid drop targets by resource', () => {
+  it('knows valid drop targets by resource (wharf + chest take anything)', () => {
     expect(isDropTargetKind(mkBuilding({ kind: 'blacksmith', tx: 0, ty: 0 }), 'iron')).toBe(true);
     expect(isDropTargetKind(mkBuilding({ kind: 'flumeHead', tx: 0, ty: 0 }), 'iron')).toBe(false);
     expect(isDropTargetKind(mkBuilding({ kind: 'incline', tx: 0, ty: 0 }), 'ore')).toBe(true);
+    expect(isDropTargetKind(mkBuilding({ kind: 'wharf', tx: 0, ty: 0 }), 'plank')).toBe(true);
+  });
+});
+
+describe('economy: wharf delivery + owned totals', () => {
+  beforeEach(() => actions.init(1));
+
+  it('shipping planks to the wharf progresses the Company letter', () => {
+    const g = getGame();
+    const wharf = g.buildings.find((b) => b.kind === 'wharf')!;
+    g.player.x = wharf.tx + 0.5;
+    g.player.y = wharf.ty + 0.5;
+    g.player.carry = 'plank';
+    g.player.carryCount = 8;
+    actions.deposit();
+    expect(wharf.shipped?.plank).toBe(8);
+    expect(g.letters[0].done).toBe(true); // letter 1 wants 8 planks shipped
+  });
+
+  it('owned totals sum the barrow and chests', () => {
+    const g = getGame();
+    g.player.carry = 'plank';
+    g.player.carryCount = 3;
+    g.buildings.push(mkBuilding({ kind: 'stockpile', tx: 5, ty: 25, store: { plank: 4, log: 2 } }));
+    const t = ownedTotals(g);
+    expect(t.plank).toBe(7);
+    expect(t.log).toBe(2);
   });
 });
 

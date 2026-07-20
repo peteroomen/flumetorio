@@ -19,6 +19,7 @@ import {
   FURNACE_ORE_PER_CYCLE,
   FURNACE_RELIGHT_CHARCOAL,
   FURNACE_RELIGHT_MS,
+  INCLINE_BUFFER_CAP,
   PITSAW_CYCLE_MS,
   PITSAW_IN_CAP,
   PITSAW_LOG_PER_CYCLE,
@@ -156,30 +157,10 @@ export function inputCap(b: Building, res: ResourceKind): number {
       if (res === 'ore') return FURNACE_ORE_PER_CYCLE * 6; // ore bunker
       if (res === 'charcoal') return FURNACE_CHARCOAL_CAP;
       return 0;
+    case 'incline':
+      return res === 'ore' ? INCLINE_BUFFER_CAP : 0; // ore loaded at the top
     default:
       return 0;
-  }
-}
-
-function adjacentStockpile(state: GameState, b: Building): boolean {
-  return state.buildings.some(
-    (s) => s.kind === 'stockpile' && Math.abs(s.tx - b.tx) + Math.abs(s.ty - b.ty) === 1,
-  );
-}
-
-// Machine outputs bank themselves if a stockpile sits beside them (the automation reward).
-export function bankAllOutputs(state: GameState): void {
-  for (const b of state.buildings) {
-    if (b.kind !== 'pitsaw' && b.kind !== 'sawmill' && b.kind !== 'clamp' && b.kind !== 'furnace')
-      continue;
-    if (!adjacentStockpile(state, b)) continue;
-    for (const res of Object.keys(b.output) as ResourceKind[]) {
-      const n = b.output[res] ?? 0;
-      if (n > 0) {
-        state.bank[res] += n;
-        b.output[res] = 0;
-      }
-    }
   }
 }
 

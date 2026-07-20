@@ -39,7 +39,8 @@ export type BuildingKind =
   | 'clamp'
   | 'incline'
   | 'furnace'
-  | 'blacksmith';
+  | 'blacksmith'
+  | 'wharf';
 
 // A machine's internal buffers keyed by resource.
 export type Buffers = Partial<Record<ResourceKind, number>>;
@@ -67,6 +68,10 @@ export interface Building {
   powered?: boolean;
   // blacksmith-only: how much iron delivered
   delivered?: number;
+  // stockpile-only: the chest's contents
+  store?: Buffers;
+  // wharf-only: cumulative goods shipped to the Company (per resource)
+  shipped?: Buffers;
 }
 
 // Items riding a flume (in transit).
@@ -120,7 +125,6 @@ export interface GameState {
   flumeItems: FlumeItem[];
   ground: GroundItem[];
   player: PlayerState;
-  bank: Record<ResourceKind, number>; // delivered-to-company stock (the wallet)
   letters: Letter[];
   activeLetterId: string | null;
   unlocked: BuildingKind[]; // buildings the player may place

@@ -18,11 +18,11 @@ import {
 } from './constants';
 import { ALL_RESOURCES, type Building, type BuildingKind, type GameState, type ResourceKind } from './types';
 import { generateWorld, idx, inBounds, isWaterAt } from './world';
-import { BUILDINGS, canAfford, placementError } from './buildings';
+import { BUILDINGS, affordableAt, payCostAt, placementError } from './buildings';
 import { FURNACE_CHARCOAL_CAP } from './constants';
 import { add, count } from './buffers';
-import { inputCap, tickMachines, bankAllOutputs } from './machines';
-import { recomputeFlumePaths, tickFeeders, tickFlume, tickIncline } from './movers';
+import { inputCap, tickMachines } from './machines';
+import { chestAdd, recomputeFlumePaths, tickFlume, tickIncline, tickTransfers } from './movers';
 import { allUnlocksFor, initialLetters } from './progression';
 
 export interface StoreShape {
@@ -30,8 +30,15 @@ export interface StoreShape {
   rev: number;
 }
 
-function emptyBank(): Record<ResourceKind, number> {
-  return { log: 0, plank: 0, ore: 0, charcoal: 0, iron: 0 };
+// The player's readily-available materials (barrow + all chests) — for HUD counters only.
+export function ownedTotals(g: GameState): Record<ResourceKind, number> {
+  const t: Record<ResourceKind, number> = { log: 0, plank: 0, ore: 0, charcoal: 0, iron: 0 };
+  if (g.player.carry) t[g.player.carry] += g.player.carryCount;
+  for (const b of g.buildings) {
+    if (b.kind !== 'stockpile' || !b.store) continue;
+    for (const r of ALL_RESOURCES) t[r] += b.store[r] ?? 0;
+  }
+  return t;
 }
 
 export function makeInitialState(seed: number): GameState {
@@ -41,13 +48,24 @@ export function makeInitialState(seed: number): GameState {
   // close to the action so the opening isn't all walking.
   const startX = 11;
   const startY = 13;
+  // The Company Wharf is pre-placed at the low end (the water's edge) — the delivery anchor.
+  const wharf: Building = {
+    id: 99999,
+    kind: 'wharf',
+    tx: 13,
+    ty: 23,
+    input: {},
+    output: {},
+    progress: 0,
+    shipped: {},
+  };
   return {
     seed,
     timeMs: 0,
     tiles: world.tiles,
     trees: world.trees,
     ores: world.ores,
-    buildings: [],
+    buildings: [wharf],
     flumeItems: [],
     ground: [],
     player: {
@@ -60,7 +78,6 @@ export function makeInitialState(seed: number): GameState {
       actionTargetId: null,
       actionProgress: 0,
     },
-    bank: emptyBank(),
     letters,
     activeLetterId: letters[0].id,
     unlocked: ['stockpile', 'pitsaw', 'blacksmith'],
@@ -242,6 +259,32 @@ export const actions = {
         return;
       }
     }
+    // 3b) withdraw from a chest — load the carried resource if present, else its fullest stack
+    for (const b of g.buildings) {
+      if (b.kind !== 'stockpile' || !b.store) continue;
+      if (centerDist(p.x, p.y, b.tx, b.ty) > REACH) continue;
+      let res: ResourceKind | null = null;
+      if (p.carry && (b.store[p.carry] ?? 0) > 0 && barrowRoom(g) > 0) res = p.carry;
+      else if (!p.carry) {
+        let bestN = 0;
+        for (const r of ALL_RESOURCES) {
+          const n = b.store[r] ?? 0;
+          if (n > bestN) {
+            bestN = n;
+            res = r;
+          }
+        }
+      }
+      if (res) {
+        const moved = addToBarrow(g, res, b.store[res] ?? 0);
+        if (moved > 0) {
+          b.store[res] = (b.store[res] ?? 0) - moved;
+          bump();
+          return;
+        }
+      }
+    }
+
     // 4) ground item
     let bestG: { d: number; id: number } | null = null;
     for (const it of g.ground) {
@@ -270,6 +313,16 @@ export const actions = {
     const pick = (kind: BuildingKind): Building | undefined =>
       g.buildings.find((b) => b.kind === kind && near(b));
 
+    // Ship to the Company Wharf (any resource) — the delivery-for-tech surface.
+    const wharf = pick('wharf');
+    if (wharf) {
+      wharf.shipped ??= {};
+      wharf.shipped[res] = (wharf.shipped[res] ?? 0) + p.carryCount;
+      clearCarry(p);
+      checkLetters(g);
+      bump();
+      return;
+    }
     if (res === 'iron') {
       const smith = pick('blacksmith');
       if (smith) {
@@ -328,12 +381,11 @@ export const actions = {
         return;
       }
     }
-    // Stockpile banks anything.
+    // A chest (stockpile) stores anything.
     const pile = pick('stockpile');
     if (pile) {
-      g.bank[res] += p.carryCount;
-      clearCarry(p);
-      checkLetters(g);
+      const moved = chestAdd((pile.store ??= {}), res, p.carryCount);
+      removeCarry(p, moved);
       bump();
       return;
     }
@@ -347,13 +399,15 @@ export const actions = {
   place(kind: BuildingKind, tx: number, ty: number): string | null {
     const g = getGame();
     if (!g.unlocked.includes(kind)) return 'Not yet unlocked.';
-    if (!canAfford(g, kind)) return 'Not enough planks in the bank.';
     const err = placementError(g, kind, tx, ty);
     if (err) return err;
-    // pay
-    for (const [r, n] of Object.entries(BUILDINGS[kind].cost)) {
-      g.bank[r as ResourceKind] -= n ?? 0;
+    if (!affordableAt(g, kind, tx, ty)) {
+      const cost = Object.entries(BUILDINGS[kind].cost)
+        .map(([r, n]) => `${n} ${r}`)
+        .join(', ');
+      return `Need ${cost} nearby (in your barrow or a chest).`;
     }
+    payCostAt(g, kind, tx, ty);
     const b: Building = {
       id: g.nextId++,
       kind,
@@ -371,6 +425,7 @@ export const actions = {
     }
     if (kind === 'incline') b.inclineTimer = 0;
     if (kind === 'blacksmith') b.delivered = 0;
+    if (kind === 'stockpile') b.store = {};
     g.buildings.push(b);
     if (kind === 'flume' || kind === 'flumeHead') recomputeFlumePaths(g);
     bump();
@@ -384,8 +439,7 @@ export const actions = {
     tickMachines(g, dtMs);
     tickFlume(g, dtMs);
     tickIncline(g, dtMs);
-    tickFeeders(g);
-    bankAllOutputs(g);
+    tickTransfers(g);
     regrow(g);
     checkLetters(g);
     bump();
@@ -430,7 +484,8 @@ export function checkLetters(g: GameState): void {
   if (!letter || letter.done) return;
   let satisfied: boolean;
   if (letter.sink === 'company') {
-    satisfied = (g.bank[letter.wantResource] ?? 0) >= letter.wantCount;
+    const wharf = g.buildings.find((b) => b.kind === 'wharf');
+    satisfied = (wharf?.shipped?.[letter.wantResource] ?? 0) >= letter.wantCount;
   } else {
     const smith = g.buildings.find((b) => b.kind === 'blacksmith');
     satisfied = (smith?.delivered ?? 0) >= letter.wantCount;

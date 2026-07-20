@@ -85,4 +85,5 @@ export const BUILDING_COLORS: Record<BuildingKind, number> = {
   incline: 0x6a5a4a,
   furnace: 0x484954,
   blacksmith: 0x7a5238,
+  wharf: 0x5a6b7a,
 };

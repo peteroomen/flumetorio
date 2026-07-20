@@ -87,7 +87,8 @@ try {
         const t = g.tiles[ty * W + tx];
         if (t.terrain !== 'grass') continue;
         if (isWater(tx + 1, ty) || isWater(tx - 1, ty) || isWater(tx, ty + 1) || isWater(tx, ty - 1)) {
-          g.bank.plank = 50;
+          // a chest of planks beside the site pays the cost (economy model A)
+          g.buildings.push({ id: g.nextId++, kind: 'stockpile', tx: tx + 1, ty, input: {}, output: {}, progress: 0, store: { plank: 50 } });
           return actions.place('waterwheel', tx, ty);
         }
       }
@@ -133,7 +134,7 @@ try {
     const g = getGame();
     const b = (kind, tx, ty, extra = {}) =>
       g.buildings.push({ id: g.nextId++, kind, tx, ty, input: {}, output: {}, progress: 0, ...extra });
-    b('stockpile', 9, 13);
+    b('stockpile', 9, 13, { store: { plank: 8, log: 3, iron: 2 } });
     b('waterwheel', 13, 12);
     b('sawmill', 11, 12, { powered: true, output: { plank: 3 } }); // running (shaft shows)
     b('pitsaw', 13, 14, { input: { log: 1 } });

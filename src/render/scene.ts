@@ -204,9 +204,31 @@ export class Scene {
       const col = BUILDING_COLORS[b.kind];
       switch (b.kind) {
         case 'stockpile': {
+          // an open crate; a stack of colored bars shows its contents + fullness
           g.poly(flat(tileDiamond(b.tx, b.ty, h)))
-            .fill({ color: col, alpha: 0.55 })
+            .fill({ color: col, alpha: 0.5 })
             .stroke({ width: 1, color: 0xd8c79a, alpha: 0.7 });
+          g.rect(c.x - 11, c.y - 9, 22, 12).fill({ color: 0x4a3826 }).stroke({ width: 1, color: 0x2a2013 });
+          g.rect(c.x - 11, c.y - 9, 22, 3).fill({ color: 0x6b5236 });
+          let sy = c.y + 2;
+          for (const r of ['iron', 'charcoal', 'ore', 'plank', 'log'] as const) {
+            const n = b.store?.[r] ?? 0;
+            if (n <= 0) continue;
+            const w = Math.min(18, 2 + n); // bar length ~ amount
+            g.rect(c.x - 9, sy, w, 2).fill({ color: RESOURCE_COLORS[r] });
+            sy -= 3;
+            if (sy < c.y - 8) break;
+          }
+          break;
+        }
+        case 'wharf': {
+          // a stone quay with a warehouse + a little mast, on the water's edge
+          g.poly(flat(tileDiamond(b.tx, b.ty, h))).fill({ color: darken(col, 0.7), alpha: 0.85 });
+          g.rect(c.x - 13, c.y - 18, 26, 18).fill({ color: col });
+          g.poly([c.x - 15, c.y - 18, c.x, c.y - 27, c.x + 15, c.y - 18]).fill({ color: darken(col, 0.7) });
+          g.rect(c.x - 4, c.y - 14, 8, 8).fill({ color: 0x2a3540 }); // door
+          g.moveTo(c.x + 9, c.y - 18).lineTo(c.x + 9, c.y - 34).stroke({ width: 2, color: 0x6b5236 }); // mast
+          g.poly([c.x + 9, c.y - 33, c.x + 20, c.y - 29, c.x + 9, c.y - 25]).fill({ color: 0xcdd4dc, alpha: 0.9 }); // sail
           break;
         }
         case 'waterwheel': {

@@ -1,5 +1,6 @@
 // Building catalog: costs, labels, and placement validity. Pure.
 
+import { BUILD_SOURCE_RADIUS } from './constants';
 import type { BuildingKind, GameState, ResourceKind, Tile } from './types';
 import { heightAt, idx, inBounds, isAdjacentToWater, isWaterAt } from './world';
 
@@ -15,8 +16,8 @@ export const BUILDINGS: Record<BuildingKind, BuildingDef> = {
   stockpile: {
     kind: 'stockpile',
     label: 'Stockpile',
-    blurb: 'A yard to drop and gather goods. A machine beside one banks its output automatically.',
-    cost: {},
+    blurb: 'A chest. Holds goods, feeds adjacent machines, catches flume tails. Build sites draw materials from nearby chests.',
+    cost: { plank: 2 },
     hotkey: '1',
   },
   pitsaw: {
@@ -78,19 +79,69 @@ export const BUILDINGS: Record<BuildingKind, BuildingDef> = {
   blacksmith: {
     kind: 'blacksmith',
     label: 'Blacksmith',
-    blurb: 'The town’s first works. Deliver iron here.',
-    cost: {},
+    blurb: 'The town’s first works. Supply it iron (carry it, or set a chest beside it).',
+    cost: { plank: 4 },
     hotkey: '0',
+  },
+  wharf: {
+    kind: 'wharf',
+    label: 'Company Wharf',
+    blurb: 'The Company ships from here. Deliver goods (Q) to earn drawings. Pre-built at the water’s edge.',
+    cost: {},
+    hotkey: '', // pre-placed, not built by the player
   },
 };
 
-// Multi-tile? All MVP buildings occupy a single tile for simplicity.
-export function canAfford(state: GameState, kind: BuildingKind): boolean {
-  const cost = BUILDINGS[kind].cost;
-  for (const [res, n] of Object.entries(cost)) {
-    if ((state.bank[res as ResourceKind] ?? 0) < (n ?? 0)) return false;
+// How much of `res` is available to a build at (tx,ty): the player's barrow + chests in radius.
+export function availableFor(state: GameState, res: ResourceKind, tx: number, ty: number): number {
+  let n = state.player.carry === res ? state.player.carryCount : 0;
+  for (const b of state.buildings) {
+    if (b.kind !== 'stockpile' || !b.store) continue;
+    if (Math.hypot(b.tx - tx, b.ty - ty) > BUILD_SOURCE_RADIUS) continue;
+    n += b.store[res] ?? 0;
+  }
+  return n;
+}
+
+// Can the cost of `kind` be met from the barrow + nearby chests at (tx,ty)?
+export function affordableAt(state: GameState, kind: BuildingKind, tx: number, ty: number): boolean {
+  for (const [res, need] of Object.entries(BUILDINGS[kind].cost)) {
+    if (availableFor(state, res as ResourceKind, tx, ty) < (need ?? 0)) return false;
   }
   return true;
+}
+
+// Consume a building's cost: barrow first, then nearest chests.
+export function payCostAt(state: GameState, kind: BuildingKind, tx: number, ty: number): void {
+  for (const [res, need0] of Object.entries(BUILDINGS[kind].cost)) {
+    const r = res as ResourceKind;
+    let need = need0 ?? 0;
+    if (state.player.carry === r && need > 0) {
+      const t = Math.min(need, state.player.carryCount);
+      state.player.carryCount -= t;
+      need -= t;
+      if (state.player.carryCount <= 0) state.player.carry = null;
+    }
+    if (need > 0) {
+      const chests = state.buildings
+        .filter(
+          (b) =>
+            b.kind === 'stockpile' &&
+            b.store &&
+            Math.hypot(b.tx - tx, b.ty - ty) <= BUILD_SOURCE_RADIUS,
+        )
+        .sort((a, b) => Math.hypot(a.tx - tx, a.ty - ty) - Math.hypot(b.tx - tx, b.ty - ty));
+      for (const c of chests) {
+        if (need <= 0) break;
+        const have = c.store![r] ?? 0;
+        const t = Math.min(have, need);
+        if (t > 0) {
+          c.store![r] = have - t;
+          need -= t;
+        }
+      }
+    }
+  }
 }
 
 export function tileOccupied(state: GameState, tx: number, ty: number): boolean {

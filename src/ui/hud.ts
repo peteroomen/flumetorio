@@ -2,8 +2,9 @@
 
 import type { GameState, ResourceKind } from '@/lib/sim/types';
 import { ALL_RESOURCES } from '@/lib/sim/types';
-import { BUILDINGS, canAfford } from '@/lib/sim/buildings';
+import { BUILDINGS, affordableAt } from '@/lib/sim/buildings';
 import { buildingStatus } from '@/lib/sim/status';
+import { ownedTotals } from '@/lib/sim/store';
 import { RESOURCE_GLYPH } from '@/render/palette';
 import type { Input } from './input';
 import { view } from './view';
@@ -97,12 +98,13 @@ export class Hud {
   }
 
   update(state: GameState): void {
-    // Bank.
+    // Owned totals (barrow + chests) — a stock readout, not a wallet.
+    const owned = ownedTotals(state);
     this.bankEl.replaceChildren();
     for (const r of ALL_RESOURCES) {
       const chip = el('div', 'bank-chip');
-      chip.append(el('span', 'g', RESOURCE_GLYPH[r]), el('span', 'v', String(state.bank[r])));
-      chip.title = r;
+      chip.append(el('span', 'g', RESOURCE_GLYPH[r]), el('span', 'v', String(owned[r])));
+      chip.title = `${r} (barrow + chests)`;
       this.bankEl.append(chip);
     }
     const carry = state.player.carry
@@ -114,9 +116,10 @@ export class Hud {
     if (letter) {
       const have =
         letter.sink === 'company'
-          ? state.bank[letter.wantResource]
+          ? (state.buildings.find((b) => b.kind === 'wharf')?.shipped?.[letter.wantResource] ?? 0)
           : (state.buildings.find((b) => b.kind === 'blacksmith')?.delivered ?? 0);
-      this.letterEl.innerHTML = `<div class="lt">✉ ${letter.title}</div><div class="lb">${letter.body}</div><div class="lp">Deliver ${letter.wantResource}: <b>${have}/${letter.wantCount}</b>${letter.sink === 'blacksmith' ? ' — carry iron to the blacksmith (Q)' : ''}${carry}</div>`;
+      const how = letter.sink === 'company' ? 'ship to the Wharf (Q)' : 'carry iron to the blacksmith (Q)';
+      this.letterEl.innerHTML = `<div class="lt">✉ ${letter.title}</div><div class="lb">${letter.body}</div><div class="lp">${letter.wantResource}: <b>${have}/${letter.wantCount}</b> — ${how}${carry}</div>`;
     } else {
       this.letterEl.innerHTML = `<div class="lt">✓ Charter complete</div>${carry}`;
     }
@@ -129,7 +132,10 @@ export class Hud {
     }
     for (const [kind, btn] of this.buildButtons) {
       btn.classList.toggle('sel', view.buildKind === kind);
-      const affordable = canAfford(state, kind as never);
+      // affordability is location-dependent now — check against the player's tile
+      const px = Math.floor(state.player.x);
+      const py = Math.floor(state.player.y);
+      const affordable = affordableAt(state, kind as never, px, py);
       btn.classList.toggle('poor', !affordable);
     }
 
