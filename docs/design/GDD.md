@@ -7,7 +7,8 @@ Status: living document. Scope-of-truth for *what the game is*. How we build it 
 
 ## 1. Pitch
 
-**Factorio's brain, Railroad Tycoon's heart, Frostpunk's soul (minus the cold).**
+**Settlers III's warmth and Factorio's engine, in a steampunk age-of-sail world where everything
+flows downhill to the sea.**
 
 An automation-first game — belts-and-machines DNA, growing factory, throughput puzzles — wearing a
 Victorian / soft-steampunk skin. You hold a Company concession over a terraced valley. Logs ride
@@ -15,6 +16,23 @@ water flumes downhill, ore carts ride self-acting gravity inclines, a waterwheel
 line shaft, and the blast furnace eats in charges and **must never go cold**. Later: narrow-gauge
 trams, mainline rail, canals with locks, aqueducts striding over rivers, sailing ships to new
 regions, aerial ropeways, hydraulic mains, pneumatic tubes.
+
+**Four layers, one spine.** The identity reads as four references, each owning a layer:
+**Settlers III** the *surface* (warm, characterful iso — a little economy you love to watch
+breathe); **Factorio** the *engine* (automation, throughput, infinite scaling, the compulsion
+loop); **steampunk** the *skin* (brass, iron, soot, steam, cogs — and the fiction that lets us
+cheat); **age of sail** the *horizon* (expansion by water to the sea and new regions — the
+frontier and the romance). What ties all four together is **water and elevation**: the river you
+flume logs down early is the same water that becomes canals, locks, and the sea you finally sail —
+rivers → flumes → aqueducts → canals+locks → harbours → sail, one continuous downhill spine. Guard
+against the sail thread feeling bolted on: from the first map, the river always runs *toward a sea
+edge you can't yet reach*, so ships arrive as a promise kept.
+
+**Elevation is the organizing principle** (§3.2, §9). Height is what makes flumes work and what
+makes "everything flows to the sea" literal — and it makes the self-acting incline a **two-way
+economy**: a loaded cart rolling *down* is what drags fuel and finished goods *up* the same rope.
+Raw materials descend for free; the machine sits partway up, fed by ore falling to it and fuel
+hauled up on the descent's back. The terrain's grain is the puzzle.
 
 **What are you feeding?** Not a rocket — a **town**. Half your world you design (the factory); half
 grows around it (the town you supply but never manage). It asks for goods, grows when you deliver,
@@ -61,10 +79,14 @@ builders), and vice versa. Nobody has shipped batch-era logistics as the automat
    batch: furnaces tap, coke ovens cycle). Transport delivers *rakes and hold-fulls*, not item
    streams. The core puzzle is **cadence** — sizing buffers and matching delivery rhythm to burn
    rate — i.e. timetabling, promoted from Factorio's late-game to the core loop.
-2. **The terrain has a grain.** Height is discrete (integer terrace levels); water flows downhill;
-   gravity is free energy in one direction only. Movers can't be spammed — every level-crossing
-   (flume, incline, lock) is a deliberate piece of infrastructure. The map wants to flow toward
-   the sea.
+2. **The terrain has a grain — and elevation is the spine.** Height is discrete (integer terrace
+   levels); water flows downhill; gravity is free energy in one direction only. Movers can't be
+   spammed — every level-crossing (flume, incline, lock) is a deliberate piece of infrastructure.
+   The map wants to flow toward the sea. The keystone move: the **self-acting incline is a two-way
+   economy** — a loaded cart descending *hauls the empty (or fuel-laden) cart up* the same rope, so
+   the down-traffic pays for the up-traffic. Raw materials fall to the machine for free; fuel and
+   finished goods climb on the descent's back. Placing a works partway up a slope — ore falling in
+   from above, fuel dragged up from below — is a real puzzle the height creates.
 3. **Every mover is earned.** There is no free go-anywhere belt. Continuous flow exists only in
    thematically-earned forms (chutes, flumes, ropeways, late-game tubes), each with a real
    constraint. Everything else is batch.
@@ -95,7 +117,7 @@ The "belt tier list". Ordered roughly by unlock; MVP-scope movers marked ★.
 | ★ Hand barrow | batch | the player's own body | the first twenty minutes; the baseline resentment |
 | ★ **Flume** | continuous | downhill grade + **water fed at the head** | the setting's belt; carries floaters (logs; barreled goods later). The MVP centrepiece |
 | River (log drive) | continuous | route is wherever the river goes; extract only at booms; jams | the *free, uncontrolled* tier below flumes. Post-MVP so it doesn't upstage them |
-| ★ **Self-acting gravity incline** | batch | needs grain cooperation + loaded-down ≥ empties-up balance | free forever where geometry allows (Denniston-style) |
+| ★ **Self-acting gravity incline** | batch | needs grain cooperation + loaded-down ≥ up-load balance | free forever where geometry allows (Denniston-style); the descent hauls **fuel/goods up** on the return rope — a two-way economy (§3.2) |
 | Horse tramway | batch | cheap, slow, no fuel chain | the pre-steam workhorse |
 | Rope haulage | batch | stationary engine: **eats coal + water**, any grade | the first uphill-load solution; steam's debut |
 | Narrow-gauge steam tram | batch | small carts, short haul | "smaller rails with little carts" |
@@ -245,6 +267,11 @@ not pushed by a fixed research menu.
   the single track saturates → double it; the siding becomes a marshalling yard; heavy rakes
   stall on gradients → banking engines or a cutting. Outgrowing your own infrastructure is the
   content, not a failure state.
+- **Elevation is the spine (§1, §3.2).** Every map is read top-to-sea: high ground (forest, ore)
+  drains down through terraces to a **sea edge**. The river always runs *toward that sea edge, even
+  before you can reach it* — so the age-of-sail horizon is seeded from minute one and ships later
+  feel like a promise kept, not a genre-swap. The water spine: rivers → flumes → aqueducts →
+  canals+locks → harbours → sail.
 - **The outer ring is the sea:** when the home valley saturates, ships open new regions with
   different resources (Space Age's planet structure, nautical). Harbors + locks are the
   interchange layer. Trade winds may give sea routes their own grain (open question).
