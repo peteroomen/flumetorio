@@ -170,3 +170,55 @@ canvas {
 .hud-banner.show {
   display: block;
 }
+
+.hud-info {
+  left: 12px;
+  bottom: 78px;
+  max-width: 268px;
+  background: var(--panel);
+  border: 1px solid var(--panel-b);
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: none;
+}
+.hud-info.show {
+  display: block;
+}
+.hud-info .it {
+  color: var(--gold);
+  font-weight: 700;
+  font-size: 13px;
+}
+.hud-info .ib {
+  font-size: 11px;
+  opacity: 0.82;
+  margin: 3px 0 6px;
+  line-height: 1.4;
+}
+.hud-info .istat {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+.hud-info .istat .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.hud-info .io {
+  font-size: 12px;
+  opacity: 0.9;
+}
+.hud-info .ih {
+  font-size: 12px;
+  color: #ffb37a;
+  margin-top: 2px;
+}
+.hud-info .ihint {
+  font-size: 10px;
+  opacity: 0.5;
+  margin-top: 6px;
+}

@@ -8,6 +8,7 @@ export interface ViewState {
   hoverTile: { tx: number; ty: number } | null;
   overlay: boolean;
   zoom: number;
+  selectedBuildingId: number | null;
 }
 
 export const view: ViewState = {
@@ -16,4 +17,5 @@ export const view: ViewState = {
   hoverTile: null,
   overlay: false,
   zoom: 1,
+  selectedBuildingId: null,
 };

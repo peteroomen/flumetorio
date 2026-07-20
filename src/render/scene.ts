@@ -5,8 +5,10 @@
 import { Application, Container, Graphics, Text, TextStyle } from 'pixi.js';
 import type { GameState } from '@/lib/sim/types';
 import { bandHeight, heightAt, idx, inBounds } from '@/lib/sim/world';
-import { MAP_H, MAP_W } from '@/lib/sim/constants';
+import { MAP_H, MAP_W, WATERWHEEL_POWER_RADIUS } from '@/lib/sim/constants';
 import { placementError } from '@/lib/sim/buildings';
+import { isPoweredAt } from '@/lib/sim/machines';
+import { buildingStatus, isDropTargetKind, promptFor, type StatusKey } from '@/lib/sim/status';
 import type { ViewState } from '@/ui/view';
 import { drawKey, HEIGHT_STEP, pointInQuad, project, tileDiamond, type Pt } from './iso';
 import {
@@ -24,15 +26,31 @@ function flat(pts: Pt[]): number[] {
 }
 
 const OVERLAY_STYLE = new TextStyle({ fill: 0xcfe8ff, fontSize: 11, fontFamily: 'monospace' });
+const PROMPT_STYLE = new TextStyle({
+  fill: 0xf2e6c8,
+  fontSize: 12,
+  fontFamily: 'monospace',
+  stroke: { color: 0x0d1016, width: 4 },
+});
+
+const STATUS_COLOR: Record<StatusKey, number> = {
+  running: 0x8fe388,
+  needsInput: 0xf2c14e,
+  noPower: 0xe8746a,
+  outputFull: 0xf2c14e,
+  cold: 0x6fb7ff,
+};
 
 export class Scene {
   app = new Application();
   private world = new Container();
   private terrainGfx = new Graphics();
   private dynGfx = new Graphics();
+  private guidanceGfx = new Graphics();
   private ghostGfx = new Graphics();
   private overlayLayer = new Container();
   private overlayPool: Text[] = [];
+  private promptText = new Text({ text: '', style: PROMPT_STYLE });
   private terrainDirty = true;
   private lastTerrainSig = '';
   private drawOrder: Array<{ tx: number; ty: number }> = [];
@@ -46,7 +64,9 @@ export class Scene {
       resolution: 1,
     });
     parent.appendChild(this.app.canvas);
-    this.world.addChild(this.terrainGfx, this.dynGfx, this.ghostGfx, this.overlayLayer);
+    this.world.addChild(this.terrainGfx, this.dynGfx, this.guidanceGfx, this.ghostGfx, this.overlayLayer);
+    this.promptText.anchor.set(0.5, 1);
+    this.world.addChild(this.promptText);
     this.app.stage.addChild(this.world);
 
     // Precompute a back-to-front draw order.
@@ -83,6 +103,7 @@ export class Scene {
     }
     this.updateCamera(state, view);
     this.drawDynamic(state);
+    this.drawGuidance(state, view);
     this.drawGhost(state, view);
     this.drawOverlay(state, view);
   }
@@ -283,6 +304,107 @@ export class Scene {
       const frac = Math.max(0, Math.min(1, p.actionProgress / dur));
       g.rect(c.x - 12, c.y - 34, 24, 4).fill({ color: 0x000000, alpha: 0.5 });
       g.rect(c.x - 12, c.y - 34, 24 * frac, 4).fill({ color: COLORS.action });
+    }
+  }
+
+  // ---------------- guidance (power viz, status, prompts, delivery) ----------------
+  private drawGuidance(state: GameState, view: ViewState): void {
+    const g = this.guidanceGfx;
+    g.clear();
+    const tiles = state.tiles;
+    const at = (tx: number, ty: number, dz = 0.45) =>
+      project(tx + 0.5, ty + 0.5, heightAt(tiles, tx, ty) + dz);
+
+    // 1) driveshafts: a brass line-shaft from each waterwheel to powered sawmills in reach
+    for (const w of state.buildings) {
+      if (w.kind !== 'waterwheel') continue;
+      const wc = at(w.tx, w.ty, 0.7);
+      for (const m of state.buildings) {
+        if (m.kind !== 'sawmill') continue;
+        if (Math.hypot(m.tx - w.tx, m.ty - w.ty) > WATERWHEEL_POWER_RADIUS) continue;
+        if (!isPoweredAt(state, m.tx, m.ty)) continue;
+        const mc = at(m.tx, m.ty, 0.55);
+        g.moveTo(wc.x, wc.y).lineTo(mc.x, mc.y).stroke({ width: 2.5, color: 0x8a6524, alpha: 0.9 });
+        g.moveTo(wc.x, wc.y).lineTo(mc.x, mc.y).stroke({ width: 1, color: 0xd8a94a, alpha: 0.95 });
+        // pulleys
+        for (let k = 1; k <= 3; k++) {
+          const f = k / 4;
+          g.circle(wc.x + (mc.x - wc.x) * f, wc.y + (mc.y - wc.y) * f, 1.6).fill({ color: 0xd8a94a });
+        }
+      }
+    }
+
+    // 2) delivery highlights while carrying
+    const carry = state.player.carry;
+    if (carry && state.player.carryCount > 0) {
+      for (const b of state.buildings) {
+        if (!isDropTargetKind(b, carry)) continue;
+        const inReach =
+          Math.hypot(state.player.x - (b.tx + 0.5), state.player.y - (b.ty + 0.5)) <= 1.5;
+        const c = at(b.tx, b.ty, 0.9);
+        const col = b.kind === 'blacksmith' ? 0xffb347 : 0x8fe388;
+        const a = inReach ? 1 : 0.4;
+        g.poly([c.x - 4, c.y - 30, c.x + 4, c.y - 30, c.x, c.y - 25]).fill({ color: col, alpha: a });
+      }
+    }
+
+    // 3) machine status badges
+    for (const b of state.buildings) {
+      const st = buildingStatus(state, b);
+      if (!st) continue;
+      const c = at(b.tx, b.ty, 0.5);
+      const col = STATUS_COLOR[st.key];
+      if (st.key === 'running') {
+        g.circle(c.x + 10, c.y - 22, 2).fill({ color: col, alpha: 0.85 });
+        continue;
+      }
+      this.drawBadge(g, c.x, c.y - 26, st.key, col);
+    }
+
+    // 4) selection ring
+    if (view.selectedBuildingId != null) {
+      const b = state.buildings.find((x) => x.id === view.selectedBuildingId);
+      if (b) {
+        const h = heightAt(tiles, b.tx, b.ty);
+        g.poly(flat(tileDiamond(b.tx, b.ty, h))).stroke({ width: 2, color: 0xf2c14e, alpha: 0.95 });
+      }
+    }
+
+    // 5) contextual prompt above the player
+    const prompt = promptFor(state);
+    if (prompt) {
+      const pc = project(state.player.x, state.player.y, this.playerHeight(state));
+      this.promptText.text = prompt;
+      this.promptText.x = pc.x;
+      this.promptText.y = pc.y - 44;
+      this.promptText.visible = true;
+    } else {
+      this.promptText.visible = false;
+    }
+  }
+
+  private drawBadge(g: Graphics, x: number, y: number, key: StatusKey, col: number): void {
+    g.roundRect(x - 8, y - 6, 16, 12, 3).fill({ color: 0x11151c, alpha: 0.92 }).stroke({ width: 1, color: col, alpha: 0.9 });
+    const cx = x;
+    const cy = y;
+    switch (key) {
+      case 'noPower':
+        g.moveTo(cx - 4, cy - 3).lineTo(cx + 4, cy + 3).stroke({ width: 1.4, color: col });
+        g.poly([cx - 1, cy - 3, cx - 3, cy, cx, cy, cx - 2, cy + 3]).stroke({ width: 1, color: col });
+        break;
+      case 'needsInput':
+        g.poly([cx - 3, cy - 3, cx + 3, cy - 3, cx, cy + 3]).fill({ color: col });
+        break;
+      case 'outputFull':
+        g.poly([cx - 3, cy + 3, cx + 3, cy + 3, cx, cy - 3]).fill({ color: col });
+        break;
+      case 'cold':
+        g.circle(cx, cy, 2.4).fill({ color: col });
+        g.moveTo(cx - 4, cy).lineTo(cx + 4, cy).stroke({ width: 1, color: col });
+        g.moveTo(cx, cy - 4).lineTo(cx, cy + 4).stroke({ width: 1, color: col });
+        break;
+      default:
+        break;
     }
   }
 
