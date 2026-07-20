@@ -108,7 +108,38 @@ The game must *say why*. Every "it just sits there" moment gets an on-screen ans
 
 <!-- filled in during/after -->
 ## What actually happened
-## Files created / modified
+
+Shipped all three parts on one branch (owner chose the combined PR), in four commits:
+
+1. **Pit saw + hand-saw removal** — new `pitsaw` (free, unpowered, slow, log→plank; ~4x slower than
+   a sawmill), unlocked from start; deleted the on-head hand-saw `'saw'` action so there's one
+   "logs go into a machine" model. Hotkeys renumbered (blacksmith→0). Letter 1 copy updated.
+2. **Guidance layer** — new pure `status.ts` (`buildingStatus`, `promptFor`, `isDropTargetKind`)
+   driving a render pass: brass driveshaft (waterwheel→powered sawmill), per-machine status badges
+   (no-power / needs-input / output-full / cold), a floating action prompt above the player, green
+   delivery chevrons on valid targets while carrying, a selection ring, and a click-to-inspect DOM
+   info panel (label, blurb, status, I/O, furnace heat).
+3. **Visual pass** — Plate II soot/brass/iron/copper palette; `antialias:false` for hard edges;
+   terrace dither; furnace re-drawn as a tapered riveted stack with brass hoop-bands + tap-hole glow
+   driven by real `heat` (dark + blue cold-marker when out); waterwheel as a turning vertical wheel.
+
+lint/type-check clean; **17 Vitest green** (+3 pit saw / status / prompt cases); `verify-scene.mjs`
+passes and the demo screenshot shows the whole guidance layer + restyle live.
+
 ## Deferred to next session
+
+- **True low-res pixel-upscale** (the literal Plate II crispness) — deferred to avoid the
+  picking/text coordinate rabbit hole mid-PR. Do as a focused follow-up: render the world to a
+  low-res buffer / nearest textures + integer zoom, keep HUD/overlay at native res.
+- Flume re-draw as a sloped flowing trough (still the old diamond); sawmill mill-house, clamp mound,
+  blacksmith lit-window, stockpile, player — the rest of the building glow-up.
+- Bigger/clearer status badges at default zoom; sound/juice.
+
+## Files created / modified
+
+sim: `types.ts` `constants.ts` `buildings.ts` `machines.ts` `movers.ts` `progression.ts` `store.ts`
+`status.ts`(new) `sim.test.ts` · render: `palette.ts` `scene.ts` · ui: `view.ts` `input.ts` `hud.ts`
+`style.css` · `scripts/verify-scene.mjs` · this plan.
+
 ## Status
-- [ ] In progress · [ ] Complete · [ ] Partial
+- [x] Complete (parts A/B/C landed; pixel-upscale + remaining building art deferred)

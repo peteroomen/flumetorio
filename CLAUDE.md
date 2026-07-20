@@ -250,6 +250,15 @@ Date: YYYY-MM-DD · Status: Accepted
   Playwright verifier passes (incl. an in-browser furnace smelt); `pnpm dev` runs. A per-resource
   buffer-cap bug (furnace couldn't be fueled) was caught by the completability test and fixed. See
   `docs/work/2026-07-19-mvp-vertical-slice.md`.
-- **Next:** balance/feel pass after live play (constants in `src/lib/sim/constants.ts`), sound +
-  juice + nicer sprites, then the post-MVP arcs (demand-pull town, steam, rail, aqueducts) per
-  `docs/ROADMAP.md`.
+- **Visual + guidance + pit-saw pass (2026-07-20, branch `feature/visual-guidance-pass`).** One
+  combined PR: (A) pixel-steampunk retint — soot/brass/iron palette, hard edges, terrace dither,
+  riveted furnace with heat-driven tap-hole glow, turning vertical waterwheel; (B) the **pit saw**
+  (free/unpowered/slow log→plank) replacing the hand-saw so there's one "logs into a machine" model;
+  (C) the **in-game guidance layer** — pure `status.ts` driving driveshaft power viz, machine status
+  badges (no-power/needs-input/output-full/cold), floating action prompts, delivery highlights, and a
+  click-to-inspect info panel. 17 Vitest green; verifier passes. Art direction explored first via a
+  published pixel-steampunk mockup (Plate II). See `docs/work/2026-07-20-visual-guidance-pass.md`.
+- **Deferred fast-follow:** true low-res pixel-upscale (literal Plate II crispness), flume/sawmill/
+  clamp/blacksmith building art, bigger status badges, sound/juice.
+- **Next:** balance/feel pass after live play (constants in `src/lib/sim/constants.ts`), the pixel
+  fast-follow, then post-MVP arcs (demand-pull town, steam, rail, aqueducts) per `docs/ROADMAP.md`.
