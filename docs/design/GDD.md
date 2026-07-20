@@ -121,7 +121,26 @@ player-push → horse → self-acting gravity incline → rope haulage (coal+wat
 
 ## 5. Power
 
-No electricity — ever, ideally. The ladder:
+**The governing rule — nature's grain is free; defying it costs power.** Power is a *throughput
+multiplier and a way to defy the grain*, never a prerequisite for a machine to function. Two tiers,
+one principle:
+
+- **Primitive tier — free, but slow.** Anything running on hand-work, gravity, or a natural
+  process works the moment it's fed and needs no power: the **pit saw** (hand-fed logs → planks),
+  the charcoal clamp, a downhill flume, a gravity incline, a hand-dug leat/sluice. Cost = it's slow
+  and doesn't scale.
+- **Powered tier — fast, or against the grain.** The same job at big throughput, or a thing nature
+  forbids (lifting water *uphill*, hauling loads *up* an incline) — in exchange for a line-shaft /
+  steam hookup: the sawmill vs the pit saw; the steam pump vs the sluice; rope haulage vs the
+  self-acting incline. Power arrives as the answer to a throughput bottleneck (a desire chain, §11),
+  never as a gate on whether a thing works.
+
+So: **downhill/hand/natural = free-but-slow; faster-or-uphill = powered.** That one line decides
+whether any future building needs power. (Balance caveat: the free-slow tier must stay slow and
+small-footprint enough that one powered machine beats a yard of free ones — a tuning number, not a
+mechanic, since we don't model workers to make hand-work block the player as Factorio does.)
+
+No electricity — ever, ideally. The powered ladder:
 
 1. **Waterwheel + line shaft** ★ — one wheel turns one shaft; machines must sit within
    **shaft reach** of it (the power-radius rule, taught physically). Placement is river-bound:
