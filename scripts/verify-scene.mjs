@@ -149,6 +149,7 @@ try {
     g.player.carry = 'log';
     g.player.carryCount = 3;
     window.__fw.view.selectedBuildingId = furn.id ?? g.buildings.find((x) => x.kind === 'furnace').id;
+    g.activeLetterId = g.letters.find((l) => l.sink === 'blacksmith').id; // show the delivery marker
     window.__fw.movers.recomputeFlumePaths(g);
     g.flumeItems.push({ id: g.nextId++, headId: g.buildings.find((x) => x.kind === 'flumeHead').id, resource: 'log', progress: 0.6 });
   });

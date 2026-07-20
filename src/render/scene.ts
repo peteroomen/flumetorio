@@ -37,6 +37,7 @@ const PROMPT_STYLE = new TextStyle({
 const STATUS_COLOR: Record<StatusKey, number> = {
   running: 0x8fe388,
   needsInput: 0xf2c14e,
+  needsFuel: 0xff8a2a,
   noPower: 0xe8746a,
   outputFull: 0xf2c14e,
   cold: 0x6fb7ff,
@@ -384,7 +385,8 @@ export class Scene {
       }
     }
 
-    // 3) machine status badges
+    // 3) machine status badges — attention states flash and show WHAT they want
+    const pulse = 0.5 + 0.5 * Math.abs(Math.sin((state.timeMs / 1000) * 3.2));
     for (const b of state.buildings) {
       const st = buildingStatus(state, b);
       if (!st) continue;
@@ -394,7 +396,23 @@ export class Scene {
         g.circle(c.x + 10, c.y - 22, 2).fill({ color: col, alpha: 0.85 });
         continue;
       }
-      this.drawBadge(g, c.x, c.y - 26, st.key, col);
+      this.drawBadge(g, c.x, c.y - 26, st.key, col, pulse);
+      if (st.want) {
+        g.rect(c.x + 7, c.y - 30, 6, 6)
+          .fill({ color: RESOURCE_COLORS[st.want], alpha: 0.5 + 0.5 * pulse })
+          .stroke({ width: 1, color: 0x000000, alpha: 0.4 });
+      }
+    }
+
+    // 3b) delivery marker over the blacksmith while it's the active goal
+    const active = state.letters.find((l) => l.id === state.activeLetterId);
+    if (active && active.sink === 'blacksmith') {
+      for (const b of state.buildings) {
+        if (b.kind !== 'blacksmith') continue;
+        const c = at(b.tx, b.ty, 0.9);
+        g.rect(c.x - 3, c.y - 42, 6, 6).fill({ color: RESOURCE_COLORS.iron });
+        g.poly([c.x - 5, c.y - 34, c.x + 5, c.y - 34, c.x, c.y - 28]).fill({ color: 0xffb347, alpha: 0.4 + 0.6 * pulse });
+      }
     }
 
     // 4) selection ring
@@ -419,25 +437,31 @@ export class Scene {
     }
   }
 
-  private drawBadge(g: Graphics, x: number, y: number, key: StatusKey, col: number): void {
-    g.roundRect(x - 8, y - 6, 16, 12, 3).fill({ color: 0x11151c, alpha: 0.92 }).stroke({ width: 1, color: col, alpha: 0.9 });
+  private drawBadge(g: Graphics, x: number, y: number, key: StatusKey, col: number, pulse = 1): void {
+    const a = 0.45 + 0.55 * pulse; // attention badges flash
+    g.roundRect(x - 8, y - 6, 16, 12, 3).fill({ color: 0x11151c, alpha: 0.92 }).stroke({ width: 1, color: col, alpha: a });
     const cx = x;
     const cy = y;
     switch (key) {
       case 'noPower':
-        g.moveTo(cx - 4, cy - 3).lineTo(cx + 4, cy + 3).stroke({ width: 1.4, color: col });
-        g.poly([cx - 1, cy - 3, cx - 3, cy, cx, cy, cx - 2, cy + 3]).stroke({ width: 1, color: col });
+        g.moveTo(cx - 4, cy - 3).lineTo(cx + 4, cy + 3).stroke({ width: 1.4, color: col, alpha: a });
+        g.poly([cx - 1, cy - 3, cx - 3, cy, cx, cy, cx - 2, cy + 3]).stroke({ width: 1, color: col, alpha: a });
+        break;
+      case 'needsFuel':
+        // a flickering flame — the Factorio "out of fuel" alert
+        g.poly([cx, cy - 4, cx + 3, cy + 1, cx + 1.5, cy + 3, cx - 1.5, cy + 3, cx - 3, cy + 1]).fill({ color: col, alpha: a });
+        g.circle(cx, cy + 1, 1).fill({ color: 0xffe08a, alpha: a });
         break;
       case 'needsInput':
-        g.poly([cx - 3, cy - 3, cx + 3, cy - 3, cx, cy + 3]).fill({ color: col });
+        g.poly([cx - 3, cy - 3, cx + 3, cy - 3, cx, cy + 3]).fill({ color: col, alpha: a });
         break;
       case 'outputFull':
-        g.poly([cx - 3, cy + 3, cx + 3, cy + 3, cx, cy - 3]).fill({ color: col });
+        g.poly([cx - 3, cy + 3, cx + 3, cy + 3, cx, cy - 3]).fill({ color: col, alpha: a });
         break;
       case 'cold':
-        g.circle(cx, cy, 2.4).fill({ color: col });
-        g.moveTo(cx - 4, cy).lineTo(cx + 4, cy).stroke({ width: 1, color: col });
-        g.moveTo(cx, cy - 4).lineTo(cx, cy + 4).stroke({ width: 1, color: col });
+        g.circle(cx, cy, 2.4).fill({ color: col, alpha: a });
+        g.moveTo(cx - 4, cy).lineTo(cx + 4, cy).stroke({ width: 1, color: col, alpha: a });
+        g.moveTo(cx, cy - 4).lineTo(cx, cy + 4).stroke({ width: 1, color: col, alpha: a });
         break;
       default:
         break;

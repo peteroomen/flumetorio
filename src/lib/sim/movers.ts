@@ -90,7 +90,9 @@ export function tickIncline(state: GameState, dt: number): void {
   }
 }
 
-// Auto-feed: an incline's bottom buffer and a clamp's output supply an adjacent furnace.
+// Auto-feed: an incline's bottom buffer and a clamp's output supply an adjacent furnace;
+// a blacksmith draws banked iron from an adjacent stockpile (so furnace→stockpile→blacksmith
+// automates — and hand-carrying iron to the blacksmith still works).
 export function tickFeeders(state: GameState): void {
   for (const furnace of state.buildings) {
     if (furnace.kind !== 'furnace') continue;
@@ -109,6 +111,16 @@ export function tickFeeders(state: GameState): void {
           take(src.output, 'charcoal', put);
         }
       }
+    }
+  }
+  for (const smith of state.buildings) {
+    if (smith.kind !== 'blacksmith') continue;
+    const nearStockpile = state.buildings.some(
+      (s) => s.kind === 'stockpile' && manhattanAdjacent(s, smith),
+    );
+    if (nearStockpile && state.bank.iron > 0) {
+      state.bank.iron -= 1;
+      smith.delivered = (smith.delivered ?? 0) + 1;
     }
   }
 }

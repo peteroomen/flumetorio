@@ -38,7 +38,7 @@ export function initialLetters(): Letter[] {
     {
       id: 'l4_blacksmith',
       title: 'The blacksmith has opened',
-      body: 'A smith has taken premises down-valley. He wants iron — deliver 10 pigs of iron to his door and the town is truly begun.',
+      body: 'A smith has taken premises down-valley. Build a Blacksmith (press 0) and supply it 10 iron — carry iron there (Q), or set a stockpile beside it and it draws banked iron itself. The town is then begun.',
       wantResource: 'iron',
       wantCount: 10,
       sink: 'blacksmith',

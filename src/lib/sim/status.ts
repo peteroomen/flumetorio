@@ -7,12 +7,13 @@ import { isPoweredAt } from './machines';
 import { FURNACE_MIN_SMELT_HEAT } from './constants';
 import type { Building, BuildingKind, GameState, ResourceKind } from './types';
 
-export type StatusKey = 'running' | 'needsInput' | 'noPower' | 'outputFull' | 'cold';
+export type StatusKey = 'running' | 'needsInput' | 'needsFuel' | 'noPower' | 'outputFull' | 'cold';
 
 export interface Status {
   key: StatusKey;
   attention: boolean; // true = wants the player's eye (amber/red badge)
   label: string;
+  want?: ResourceKind; // the resource this machine is waiting for (shown as a glyph)
 }
 
 // A machine's live status, or null for things with no meaningful status badge.
@@ -25,17 +26,18 @@ export function buildingStatus(state: GameState, b: Building): Status | null {
         return { key: 'noPower', attention: true, label: 'No power — needs a waterwheel in reach' };
       const outRes: ResourceKind = b.kind === 'clamp' ? 'charcoal' : 'plank';
       if (count(b.input, 'log') < 1)
-        return { key: 'needsInput', attention: true, label: 'Idle — needs logs' };
+        return { key: 'needsInput', attention: true, want: 'log', label: 'Idle — needs logs' };
       if (count(b.output, outRes) >= outCapOf(b))
         return { key: 'outputFull', attention: true, label: 'Output full — collect it' };
       return { key: 'running', attention: false, label: 'Running' };
     }
     case 'furnace': {
-      if (b.cold) return { key: 'cold', attention: true, label: 'Cold — feed charcoal to relight' };
+      if (b.cold)
+        return { key: 'needsFuel', attention: true, want: 'charcoal', label: 'Cold — needs charcoal (from a clamp) to relight' };
       if ((b.heat ?? 0) < FURNACE_MIN_SMELT_HEAT && count(b.input, 'charcoal') < 1)
-        return { key: 'cold', attention: true, label: 'Cooling — needs charcoal' };
+        return { key: 'needsFuel', attention: true, want: 'charcoal', label: 'Cooling — needs charcoal' };
       if (count(b.input, 'ore') < 1)
-        return { key: 'needsInput', attention: true, label: 'Hot but idle — needs ore' };
+        return { key: 'needsInput', attention: true, want: 'ore', label: 'Hot but idle — needs ore' };
       if ((b.output.iron ?? 0) >= 20)
         return { key: 'outputFull', attention: true, label: 'Full of iron — collect it' };
       return { key: 'running', attention: false, label: 'Smelting' };
