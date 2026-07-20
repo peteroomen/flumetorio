@@ -194,6 +194,15 @@ export class Scene {
           }
           break;
         }
+        case 'pitsaw': {
+          // a low saw-pit frame with a log and an angled saw blade
+          g.poly(flat(tileDiamond(b.tx, b.ty, h))).fill({ color: darken(col, 0.6), alpha: 0.5 });
+          g.rect(c.x - 10, c.y - 8, 20, 5).fill({ color: 0x9c6b3b }); // the log
+          g.moveTo(c.x - 8, c.y - 14).lineTo(c.x + 6, c.y - 2).stroke({ width: 1.5, color: 0x8a8f98 }); // saw
+          g.rect(c.x - 12, c.y - 3, 3, 6).fill({ color: darken(col, 0.8) });
+          g.rect(c.x + 9, c.y - 3, 3, 6).fill({ color: darken(col, 0.8) });
+          break;
+        }
         case 'clamp': {
           g.poly([c.x, c.y - 16, c.x - 13, c.y + 2, c.x + 13, c.y + 2]).fill({ color: col });
           g.circle(c.x, c.y - 4, 3).fill({ color: 0x9a5a2a, alpha: 0.8 });

@@ -22,8 +22,16 @@ export const BARROW_CAPACITY = 6; // items the player can carry at once
 export const REACH = 1.35; // interaction reach in tiles
 export const CHOP_MS = 1300; // time to fell a tree
 export const MINE_MS = 1600; // time to knock ore off the outcrop
-export const SAW_MS = 1200; // hand pit-saw: 1 log -> 1 plank (banked)
 export const ORE_REGROW_MS = 60_000; // an exhausted outcrop face recovers
+
+// Pit saw: the free, unpowered, SLOW manual tier (GDD §5 power rule). 1 log -> 1 plank.
+// Deliberately ~4x slower throughput than a powered sawmill (slower cycle AND half the yield),
+// so one sawmill beats a yard of pit saws.
+export const PITSAW_CYCLE_MS = 3200;
+export const PITSAW_LOG_PER_CYCLE = 1;
+export const PITSAW_PLANK_PER_CYCLE = 1;
+export const PITSAW_IN_CAP = 4;
+export const PITSAW_OUT_CAP = 4;
 
 // Yields.
 export const TREE_LOG_YIELD = 4;

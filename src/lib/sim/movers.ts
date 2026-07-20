@@ -65,7 +65,7 @@ export function tickFlume(state: GameState, dt: number): void {
       const tail = head.path[end];
       const sink = state.buildings.find(
         (b) =>
-          (b.kind === 'sawmill' || b.kind === 'clamp') &&
+          (b.kind === 'sawmill' || b.kind === 'clamp' || b.kind === 'pitsaw') &&
           manhattanAdjacent(b, tail) &&
           count(b.input, 'log') < inputCap(b, 'log'),
       );

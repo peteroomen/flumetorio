@@ -153,7 +153,7 @@ describe('progression', () => {
 describe('player verbs', () => {
   beforeEach(() => actions.init(1));
 
-  it('chops a tree into logs, then hand-saws banked planks', () => {
+  it('chops a tree into logs, then a pit saw turns them into banked planks', () => {
     const g = getGame();
     const tree = g.trees.find((t) => t.state === 'tree')!;
     g.player.x = tree.tx + 0.5;
@@ -163,13 +163,13 @@ describe('player verbs', () => {
     expect(g.player.carry).toBe('log');
     expect(g.player.carryCount).toBeGreaterThan(0);
 
-    const logs = g.player.carryCount;
-    for (let s = 0; s < logs; s++) {
-      actions.handSaw();
-      for (let i = 0; i < 15; i++) actions.updateAction(100);
-    }
-    expect(g.bank.plank).toBeGreaterThanOrEqual(logs);
-    expect(g.player.carryCount).toBe(0);
+    // Build a pit saw (free, unlocked from start) + a stockpile beside it to bank planks.
+    expect(actions.place('pitsaw', 6, 25)).toBeNull();
+    expect(actions.place('stockpile', 7, 25)).toBeNull();
+    const saw = g.buildings.find((b) => b.kind === 'pitsaw')!;
+    saw.input.log = 3;
+    for (let i = 0; i < 140; i++) actions.simStep(100);
+    expect(g.bank.plank).toBeGreaterThan(0); // pit saw (unpowered) produced + banked planks
   });
 
   it('deposits carried logs into an adjacent flume head as riding items', () => {

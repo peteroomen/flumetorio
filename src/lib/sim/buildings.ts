@@ -15,65 +15,72 @@ export const BUILDINGS: Record<BuildingKind, BuildingDef> = {
   stockpile: {
     kind: 'stockpile',
     label: 'Stockpile',
-    blurb: 'A yard to drop and gather goods.',
+    blurb: 'A yard to drop and gather goods. A machine beside one banks its output automatically.',
     cost: {},
     hotkey: '1',
+  },
+  pitsaw: {
+    kind: 'pitsaw',
+    label: 'Pit saw',
+    blurb: 'Logs → planks by hand. Free and needs no power, but slow. Your first way to make planks.',
+    cost: {},
+    hotkey: '2',
   },
   waterwheel: {
     kind: 'waterwheel',
     label: 'Waterwheel',
     blurb: 'Must sit beside the river. Powers machines within its line-shaft reach.',
     cost: { plank: 6 },
-    hotkey: '2',
+    hotkey: '3',
   },
   sawmill: {
     kind: 'sawmill',
     label: 'Sawmill',
     blurb: 'Logs → planks. Needs waterwheel power within reach.',
     cost: { plank: 4 },
-    hotkey: '3',
+    hotkey: '4',
   },
   flumeHead: {
     kind: 'flumeHead',
     label: 'Flume head-gate',
     blurb: 'Must sit beside water. Tip logs here; they ride downhill to the tail.',
     cost: { plank: 5 },
-    hotkey: '4',
+    hotkey: '5',
   },
   flume: {
     kind: 'flume',
     label: 'Flume trestle',
     blurb: 'Extends the flume run. Must continue downhill or level.',
     cost: { plank: 1 },
-    hotkey: '5',
+    hotkey: '6',
   },
   clamp: {
     kind: 'clamp',
     label: 'Charcoal clamp',
     blurb: 'Logs → charcoal. Slow, needs no power.',
     cost: { plank: 4 },
-    hotkey: '6',
+    hotkey: '7',
   },
   incline: {
     kind: 'incline',
     label: 'Gravity incline',
     blurb: 'Place across a downhill step. Self-acting carts carry ore to the low end.',
     cost: { plank: 6 },
-    hotkey: '7',
+    hotkey: '8',
   },
   furnace: {
     kind: 'furnace',
     label: 'Blast furnace',
     blurb: 'Ore + charcoal → iron. Stoke it — a cold furnace is costly to relight.',
     cost: { plank: 8 },
-    hotkey: '8',
+    hotkey: '9',
   },
   blacksmith: {
     kind: 'blacksmith',
     label: 'Blacksmith',
     blurb: 'The town’s first works. Deliver iron here.',
     cost: {},
-    hotkey: '9',
+    hotkey: '0',
   },
 };
 
@@ -136,6 +143,7 @@ export function placementError(
       if (!bordersDrop) return 'An incline needs a downhill step — build it at a terrace edge.';
       return null;
     }
+    case 'pitsaw':
     case 'sawmill':
     case 'clamp':
     case 'furnace':

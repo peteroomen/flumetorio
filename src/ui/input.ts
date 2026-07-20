@@ -61,7 +61,6 @@ export class Input {
 
     if (k === 'e' || k === ' ') actions.interact();
     else if (k === 'q') actions.deposit();
-    else if (k === 'c') actions.handSaw();
     else if (k === 'g') view.overlay = !view.overlay;
     else if (k === 'escape') this.exitBuild();
     else if (k === 'n') {

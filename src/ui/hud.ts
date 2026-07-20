@@ -34,7 +34,7 @@ export class Hud {
     const controls = el(
       'div',
       'hud-controls',
-      'WASD move · E act/collect · Q drop/deliver · C hand-saw · 1–9 build · wheel zoom · G debug · N restart',
+      'WASD move · E act/collect · Q drop/deliver · 1–0 build · wheel zoom · G debug · N restart',
     );
     this.root.append(this.letterEl, this.bankEl, this.buildBar, controls, this.toastEl, this.bannerEl);
     parent.append(this.root);

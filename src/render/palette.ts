@@ -58,6 +58,7 @@ export const RESOURCE_GLYPH: Record<ResourceKind, string> = {
 
 export const BUILDING_COLORS: Record<BuildingKind, number> = {
   stockpile: 0x7d6b4e,
+  pitsaw: 0x6e4d2c,
   waterwheel: 0x6d5334,
   sawmill: 0x8a6a44,
   flume: 0x53788a,
