@@ -26,7 +26,37 @@ where **batch transport is the core loop**, not the late-game layer.
 | Decisions          | `docs/decisions/`                        | ADRs (engine choice, iso projection)     |
 | Work logs          | `docs/work/YYYY-MM-DD-*.md`              | Per-session notes                        |
 
+## Play the vertical slice
+
+A playable MVP lives on `feature/mvp-vertical-slice`.
+
+```bash
+pnpm install
+pnpm dev          # open the printed localhost URL (default http://localhost:3100)
+```
+
+**Controls:** `WASD` move · `E` act (fell tree / mine ore / collect from a machine) ·
+`Q` drop / deliver (into a flume head, incline, furnace, stockpile, or the blacksmith) ·
+`C` hand-saw a carried log into a banked plank · `1`–`9` pick a building, click to place
+(right-click / `Esc` to cancel) · mouse wheel zoom · `G` debug overlay · `N` restart.
+
+**The loop:** fell trees → saw planks (by hand, then with a water-powered sawmill) → deliver planks
+to the Company (drop at a stockpile) to earn building drawings → flume logs downhill to a charcoal
+clamp, mine ore onto a gravity incline; both auto-feed a **blast furnace you must keep stoked**
+(let it go cold and relighting is costly) → carry the iron to the **blacksmith** to light the
+town's first forge (win). Progress autosaves.
+
+```bash
+pnpm test         # sim + completability tests (14)
+pnpm lint && pnpm type-check
+pnpm build && node scripts/verify-scene.mjs   # browser smoke test + screenshots to docs/work/assets
+pnpm exec tsx scripts/dump-map.ts 1           # ASCII dump of a seed's valley
+```
+
+See `docs/work/2026-07-19-mvp-vertical-slice.md` for what's in the slice and what's deliberately
+simplified vs the full GDD.
+
 ## Status
 
-Docs-only. Next step is **M0** (see the roadmap): scaffold the web prototype stack, the iso terrace
-renderer spike, and the screenshot-verification harness.
+**MVP vertical slice is playable** (M0–M5 compressed onto one branch). Next: a balance/feel pass
+after live play, then the post-MVP arcs (demand-pull town, steam, rail, aqueducts) per the roadmap.
