@@ -5,6 +5,7 @@ import { tickMachines, bankAllOutputs } from './machines';
 import { recomputeFlumePaths, tickFlume, tickIncline, tickFeeders } from './movers';
 import { actions, getGame, makeInitialState, checkLetters } from './store';
 import { placementError } from './buildings';
+import { buildingStatus, isDropTargetKind, promptFor } from './status';
 import type { Building, BuildingKind, GameState } from './types';
 
 function drive(fn: (dt: number) => void, seconds: number, stepMs = 100): void {
@@ -153,7 +154,7 @@ describe('progression', () => {
 describe('player verbs', () => {
   beforeEach(() => actions.init(1));
 
-  it('chops a tree into logs, then hand-saws banked planks', () => {
+  it('chops a tree into logs, then a pit saw turns them into banked planks', () => {
     const g = getGame();
     const tree = g.trees.find((t) => t.state === 'tree')!;
     g.player.x = tree.tx + 0.5;
@@ -163,13 +164,13 @@ describe('player verbs', () => {
     expect(g.player.carry).toBe('log');
     expect(g.player.carryCount).toBeGreaterThan(0);
 
-    const logs = g.player.carryCount;
-    for (let s = 0; s < logs; s++) {
-      actions.handSaw();
-      for (let i = 0; i < 15; i++) actions.updateAction(100);
-    }
-    expect(g.bank.plank).toBeGreaterThanOrEqual(logs);
-    expect(g.player.carryCount).toBe(0);
+    // Build a pit saw (free, unlocked from start) + a stockpile beside it to bank planks.
+    expect(actions.place('pitsaw', 6, 25)).toBeNull();
+    expect(actions.place('stockpile', 7, 25)).toBeNull();
+    const saw = g.buildings.find((b) => b.kind === 'pitsaw')!;
+    saw.input.log = 3;
+    for (let i = 0; i < 140; i++) actions.simStep(100);
+    expect(g.bank.plank).toBeGreaterThan(0); // pit saw (unpowered) produced + banked planks
   });
 
   it('deposits carried logs into an adjacent flume head as riding items', () => {
@@ -257,6 +258,46 @@ describe('completable valley (seed 1)', () => {
     find(g, clamp.tx, clamp.ty).input.log = 8;
     for (let i = 0; i < 450; i++) actions.simStep(100);
     expect(find(g, furn.tx, furn.ty).output.iron ?? 0).toBeGreaterThan(0); // iron smelted on the real map
+  });
+});
+
+describe('guidance derivations', () => {
+  beforeEach(() => actions.init(1));
+
+  it('reports why a machine is not running', () => {
+    const g = getGame();
+    const mill = mkBuilding({ kind: 'sawmill', tx: 5, ty: 25 });
+    g.buildings.push(mill);
+    expect(buildingStatus(g, mill)?.key).toBe('noPower');
+    g.buildings.push(mkBuilding({ kind: 'waterwheel', tx: 6, ty: 25 }));
+    expect(buildingStatus(g, mill)?.key).toBe('needsInput'); // powered but no logs
+    mill.input.log = 2;
+    expect(buildingStatus(g, mill)?.key).toBe('running');
+
+    const furnace = mkBuilding({ kind: 'furnace', tx: 5, ty: 27, heat: 0, cold: true });
+    g.buildings.push(furnace);
+    expect(buildingStatus(g, furnace)?.key).toBe('cold');
+  });
+
+  it('offers the right contextual prompt', () => {
+    const g = getGame();
+    const tree = g.trees.find((t) => t.state === 'tree')!;
+    g.player.x = tree.tx + 0.5;
+    g.player.y = tree.ty + 0.5;
+    expect(promptFor(g)).toBe('E — fell timber');
+
+    g.player.carry = 'log';
+    g.player.carryCount = 2;
+    g.buildings.push(mkBuilding({ kind: 'flumeHead', tx: 8, ty: 8 }));
+    g.player.x = 8.5;
+    g.player.y = 8.5;
+    expect(promptFor(g)).toBe('Q — tip logs into the flume');
+  });
+
+  it('knows valid drop targets by resource', () => {
+    expect(isDropTargetKind(mkBuilding({ kind: 'blacksmith', tx: 0, ty: 0 }), 'iron')).toBe(true);
+    expect(isDropTargetKind(mkBuilding({ kind: 'flumeHead', tx: 0, ty: 0 }), 'iron')).toBe(false);
+    expect(isDropTargetKind(mkBuilding({ kind: 'incline', tx: 0, ty: 0 }), 'ore')).toBe(true);
   });
 });
 

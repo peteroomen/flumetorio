@@ -31,6 +31,7 @@ export interface OreNode {
 
 export type BuildingKind =
   | 'stockpile'
+  | 'pitsaw'
   | 'sawmill'
   | 'waterwheel'
   | 'flume'
@@ -92,7 +93,7 @@ export interface PlayerState {
   carry: ResourceKind | null;
   carryCount: number;
   // action in progress
-  actionKind: 'chop' | 'mine' | 'saw' | null;
+  actionKind: 'chop' | 'mine' | null;
   actionTargetId: number | null;
   actionProgress: number; // ms elapsed
 }

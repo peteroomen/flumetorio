@@ -19,6 +19,11 @@ import {
   FURNACE_ORE_PER_CYCLE,
   FURNACE_RELIGHT_CHARCOAL,
   FURNACE_RELIGHT_MS,
+  PITSAW_CYCLE_MS,
+  PITSAW_IN_CAP,
+  PITSAW_LOG_PER_CYCLE,
+  PITSAW_OUT_CAP,
+  PITSAW_PLANK_PER_CYCLE,
   SAWMILL_CYCLE_MS,
   SAWMILL_IN_CAP,
   SAWMILL_LOG_PER_CYCLE,
@@ -58,6 +63,19 @@ function tickSawmill(b: Building, dt: number): void {
     b.progress -= SAWMILL_CYCLE_MS;
     take(b.input, 'log', SAWMILL_LOG_PER_CYCLE);
     add(b.output, 'plank', SAWMILL_PLANK_PER_CYCLE, SAWMILL_OUT_CAP);
+  }
+}
+
+function tickPitsaw(b: Building, dt: number): void {
+  // Free, unpowered, slow: log -> plank. No power gate (nature's grain is free).
+  const hasLog = count(b.input, 'log') >= PITSAW_LOG_PER_CYCLE;
+  const hasRoom = total(b.output) + PITSAW_PLANK_PER_CYCLE <= PITSAW_OUT_CAP;
+  if (!hasLog || !hasRoom) return;
+  b.progress += dt;
+  if (b.progress >= PITSAW_CYCLE_MS) {
+    b.progress -= PITSAW_CYCLE_MS;
+    take(b.input, 'log', PITSAW_LOG_PER_CYCLE);
+    add(b.output, 'plank', PITSAW_PLANK_PER_CYCLE, PITSAW_OUT_CAP);
   }
 }
 
@@ -128,6 +146,8 @@ function tickFurnace(b: Building, dt: number): void {
 // Input capacity per machine/resource — used by feed transfers.
 export function inputCap(b: Building, res: ResourceKind): number {
   switch (b.kind) {
+    case 'pitsaw':
+      return res === 'log' ? PITSAW_IN_CAP : 0;
     case 'sawmill':
       return res === 'log' ? SAWMILL_IN_CAP : 0;
     case 'clamp':
@@ -150,7 +170,8 @@ function adjacentStockpile(state: GameState, b: Building): boolean {
 // Machine outputs bank themselves if a stockpile sits beside them (the automation reward).
 export function bankAllOutputs(state: GameState): void {
   for (const b of state.buildings) {
-    if (b.kind !== 'sawmill' && b.kind !== 'clamp' && b.kind !== 'furnace') continue;
+    if (b.kind !== 'pitsaw' && b.kind !== 'sawmill' && b.kind !== 'clamp' && b.kind !== 'furnace')
+      continue;
     if (!adjacentStockpile(state, b)) continue;
     for (const res of Object.keys(b.output) as ResourceKind[]) {
       const n = b.output[res] ?? 0;
@@ -166,6 +187,9 @@ export function tickMachines(state: GameState, dt: number): void {
   recomputePower(state);
   for (const b of state.buildings) {
     switch (b.kind) {
+      case 'pitsaw':
+        tickPitsaw(b, dt);
+        break;
       case 'sawmill':
         tickSawmill(b, dt);
         break;

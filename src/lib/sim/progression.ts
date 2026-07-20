@@ -8,7 +8,7 @@ export function initialLetters(): Letter[] {
     {
       id: 'l1_planks',
       title: 'Concession granted',
-      body: 'The Company grants you this valley. Cut timber, saw planks, and deliver 8 planks to prove the works. Drawings for a waterwheel and sawmill will follow.',
+      body: 'The Company grants you this valley. Fell timber (E), build a pit saw to cut planks, and deliver 8 planks — drop them at a stockpile. Drawings for a water-powered sawmill will follow.',
       wantResource: 'plank',
       wantCount: 8,
       sink: 'company',
@@ -49,7 +49,7 @@ export function initialLetters(): Letter[] {
 }
 
 export function allUnlocksFor(letters: Letter[]): BuildingKind[] {
-  const set = new Set<BuildingKind>(['stockpile', 'blacksmith']);
+  const set = new Set<BuildingKind>(['stockpile', 'pitsaw', 'blacksmith']);
   for (const l of letters) if (l.done) for (const u of l.unlocks) set.add(u);
   return [...set];
 }

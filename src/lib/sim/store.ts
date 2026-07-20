@@ -14,7 +14,6 @@ import {
   PLAYER_LADEN_SPEED,
   REACH,
   SAPLING_GROW_MS,
-  SAW_MS,
   TREE_LOG_YIELD,
 } from './constants';
 import { ALL_RESOURCES, type Building, type BuildingKind, type GameState, type ResourceKind } from './types';
@@ -64,7 +63,7 @@ export function makeInitialState(seed: number): GameState {
     bank: emptyBank(),
     letters,
     activeLetterId: letters[0].id,
-    unlocked: ['stockpile', 'blacksmith'],
+    unlocked: ['stockpile', 'pitsaw', 'blacksmith'],
     nextId: 100000,
     won: false,
     toast: null,
@@ -187,17 +186,6 @@ export const actions = {
       p.actionKind = null;
       p.actionProgress = 0;
       bump();
-    } else if (p.actionKind === 'saw' && p.actionProgress >= SAW_MS) {
-      // Hand pit-saw: consume 1 carried log, bank 1 plank.
-      if (g.player.carry === 'log' && g.player.carryCount > 0) {
-        g.player.carryCount -= 1;
-        if (g.player.carryCount === 0) g.player.carry = null;
-        g.bank.plank += 1;
-        checkLetters(g);
-      }
-      p.actionKind = null;
-      p.actionProgress = 0;
-      bump();
     }
   },
 
@@ -237,6 +225,7 @@ export const actions = {
     }
     // 3) collect a machine's output
     const outMap: Partial<Record<BuildingKind, ResourceKind>> = {
+      pitsaw: 'plank',
       sawmill: 'plank',
       clamp: 'charcoal',
       furnace: 'iron',
@@ -302,7 +291,10 @@ export const actions = {
         return;
       }
       const mill = g.buildings.find(
-        (b) => (b.kind === 'sawmill' || b.kind === 'clamp') && near(b) && count(b.input, 'log') < inputCap(b, 'log'),
+        (b) =>
+          (b.kind === 'sawmill' || b.kind === 'clamp' || b.kind === 'pitsaw') &&
+          near(b) &&
+          count(b.input, 'log') < inputCap(b, 'log'),
       );
       if (mill) {
         const moved = add(mill.input, 'log', p.carryCount, inputCap(mill, 'log'));
@@ -348,18 +340,6 @@ export const actions = {
     // Otherwise drop on the ground at the player's feet.
     dropGroundAt(g, Math.floor(p.x), Math.floor(p.y), res, p.carryCount);
     clearCarry(p);
-    bump();
-  },
-
-  // Hand pit-saw a carried log into a banked plank.
-  handSaw(): void {
-    const g = getGame();
-    const p = g.player;
-    if (p.actionKind) return;
-    if (p.carry !== 'log' || p.carryCount <= 0) return;
-    p.actionKind = 'saw';
-    p.actionTargetId = null;
-    p.actionProgress = 0;
     bump();
   },
 

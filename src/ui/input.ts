@@ -61,7 +61,6 @@ export class Input {
 
     if (k === 'e' || k === ' ') actions.interact();
     else if (k === 'q') actions.deposit();
-    else if (k === 'c') actions.handSaw();
     else if (k === 'g') view.overlay = !view.overlay;
     else if (k === 'escape') this.exitBuild();
     else if (k === 'n') {
@@ -95,6 +94,10 @@ export class Input {
       const err = actions.place(view.buildKind, tile.tx, tile.ty);
       if (err) getGame().toast = err;
       // stay in build mode for repeat placement (esc / right-click to exit)
+    } else if (view.mode === 'play' && tile) {
+      // click a building to inspect it (toggle off if it's the same one / empty tile)
+      const b = getGame().buildings.find((x) => x.tx === tile.tx && x.ty === tile.ty);
+      view.selectedBuildingId = b && b.id !== view.selectedBuildingId ? b.id : null;
     }
   };
 

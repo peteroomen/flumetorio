@@ -1,11 +1,20 @@
 // DOM HUD: bank counters, the active Company letter, the build bar, controls, toast, win banner.
 
-import type { GameState } from '@/lib/sim/types';
+import type { GameState, ResourceKind } from '@/lib/sim/types';
 import { ALL_RESOURCES } from '@/lib/sim/types';
 import { BUILDINGS, canAfford } from '@/lib/sim/buildings';
+import { buildingStatus } from '@/lib/sim/status';
 import { RESOURCE_GLYPH } from '@/render/palette';
 import type { Input } from './input';
 import { view } from './view';
+
+const STATUS_HEX: Record<string, string> = {
+  running: '#8fe388',
+  needsInput: '#f2c14e',
+  noPower: '#e8746a',
+  outputFull: '#f2c14e',
+  cold: '#6fb7ff',
+};
 
 function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -25,6 +34,7 @@ export class Hud {
   private buildBar = el('div', 'hud-build');
   private toastEl = el('div', 'hud-toast');
   private bannerEl = el('div', 'hud-banner');
+  private infoEl = el('div', 'hud-info');
   private buildButtons = new Map<string, HTMLButtonElement>();
   private toastUntil = 0;
   private lastUnlockedKey = '';
@@ -34,9 +44,17 @@ export class Hud {
     const controls = el(
       'div',
       'hud-controls',
-      'WASD move · E act/collect · Q drop/deliver · C hand-saw · 1–9 build · wheel zoom · G debug · N restart',
+      'WASD move · E act/collect · Q drop/deliver · 1–0 build · wheel zoom · G debug · N restart',
     );
-    this.root.append(this.letterEl, this.bankEl, this.buildBar, controls, this.toastEl, this.bannerEl);
+    this.root.append(
+      this.letterEl,
+      this.bankEl,
+      this.buildBar,
+      controls,
+      this.toastEl,
+      this.bannerEl,
+      this.infoEl,
+    );
     parent.append(this.root);
   }
 
@@ -55,6 +73,27 @@ export class Hud {
       this.buildBar.append(btn);
       this.buildButtons.set(def.kind, btn);
     }
+  }
+
+  private updateInfo(state: GameState): void {
+    const b = state.buildings.find((x) => x.id === view.selectedBuildingId);
+    if (!b) {
+      this.infoEl.classList.remove('show');
+      return;
+    }
+    const def = BUILDINGS[b.kind];
+    const st = buildingStatus(state, b);
+    const io: string[] = [];
+    for (const r of Object.keys(b.input) as ResourceKind[])
+      if (b.input[r]) io.push(`in ${RESOURCE_GLYPH[r]} ${b.input[r]}`);
+    for (const r of Object.keys(b.output) as ResourceKind[])
+      if (b.output[r]) io.push(`out ${RESOURCE_GLYPH[r]} ${b.output[r]}`);
+    const heat = b.kind === 'furnace' ? `<div class="ih">heat ${Math.round(b.heat ?? 0)}%${b.cold ? ' · cold' : ''}</div>` : '';
+    const status = st
+      ? `<div class="istat"><span class="dot" style="background:${STATUS_HEX[st.key]}"></span>${st.label}</div>`
+      : '';
+    this.infoEl.innerHTML = `<div class="it">${def.label}</div><div class="ib">${def.blurb}</div>${status}${io.length ? `<div class="io">${io.join(' · ')}</div>` : ''}${heat}<div class="ihint">click elsewhere to close</div>`;
+    this.infoEl.classList.add('show');
   }
 
   update(state: GameState): void {
@@ -102,6 +141,9 @@ export class Hud {
       state.toast = null;
     }
     if (performance.now() > this.toastUntil) this.toastEl.classList.remove('show');
+
+    // Selected-building info panel.
+    this.updateInfo(state);
 
     // Win banner.
     this.bannerEl.classList.toggle('show', state.won);

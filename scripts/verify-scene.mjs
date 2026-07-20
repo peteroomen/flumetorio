@@ -135,17 +135,20 @@ try {
       g.buildings.push({ id: g.nextId++, kind, tx, ty, input: {}, output: {}, progress: 0, ...extra });
     b('stockpile', 9, 13);
     b('waterwheel', 13, 12);
-    b('sawmill', 11, 12, { powered: true, output: { plank: 3 } });
-    b('clamp', 9, 15, { output: { charcoal: 2 } });
-    b('furnace', 11, 15, { heat: 82, cold: false, output: { iron: 2 } });
+    b('sawmill', 11, 12, { powered: true, output: { plank: 3 } }); // running (shaft shows)
+    b('pitsaw', 13, 14, { input: { log: 1 } });
+    b('clamp', 9, 15); // needs input badge
+    const furn = b('furnace', 11, 15, { heat: 0, cold: true }); // cold badge
     b('blacksmith', 9, 17, { delivered: 4 });
     b('flumeHead', 12, 10);
     b('flume', 12, 11);
     b('flume', 12, 12);
-    b('incline', 8, 14);
-    g.ground.push({ id: g.nextId++, tx: 10, ty: 13, resource: 'log', count: 2 });
-    g.player.x = 10.5;
-    g.player.y = 13.5;
+    b('incline', 8, 14, { input: { ore: 2 } });
+    g.player.x = 12.5; // stand by the flume head, carrying a log -> prompt + highlight
+    g.player.y = 10.7;
+    g.player.carry = 'log';
+    g.player.carryCount = 3;
+    window.__fw.view.selectedBuildingId = furn.id ?? g.buildings.find((x) => x.kind === 'furnace').id;
     window.__fw.movers.recomputeFlumePaths(g);
     g.flumeItems.push({ id: g.nextId++, headId: g.buildings.find((x) => x.kind === 'flumeHead').id, resource: 'log', progress: 0.6 });
   });
