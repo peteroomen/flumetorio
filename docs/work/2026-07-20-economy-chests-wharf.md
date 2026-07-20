@@ -93,8 +93,33 @@ Best rebased on **PR #4** (feeding cues + blacksmith-from-stockpile), which this
 (blacksmith now pulls from a chest, not the bank). Merge #4 first, then this branches clean off main.
 
 ---
-<!-- filled after -->
 ## What actually happened
+
+Built the whole restructure. `bank` is gone. Stockpiles are chests (`Building.store`) that
+auto-feed adjacent machines, catch machine output, accept flume tails, and show their contents.
+A pre-placed **Company Wharf** (`shipped` counter, at the water's edge) is the sole deliver-for-tech
+surface; hand-carry `Q` ships to it, and the Company letters check `wharf.shipped`. Build costs come
+from the **barrow + chests within 3 tiles** (`affordableAt`/`payCostAt`); stockpile now costs 2
+planks, blacksmith 4 — a real materials economy. `E` withdraws from a chest; the HUD counters are a
+derived "owned" readout (barrow + chests). The reported **flume-into-chest** bug is fixed. One
+unified `tickTransfers` replaced the ad-hoc feeders + `bankAllOutputs`. `SAVE_VERSION` → 2 (old saves
+drop cleanly). Kept auto-ship-from-chest OUT (would strand build materials) — note for later with a
+filter.
+
+lint/type-check clean; **24 Vitest green** (chest collect/feed, flume→chest, build-cost-from-chest,
+wharf delivery, owned totals, + updated existing). Browser verifier passes; demo shows chest
+indicators, real build costs, derived counters.
+
 ## Files changed
+
+sim: `types.ts` `constants.ts` `buildings.ts` `machines.ts` `movers.ts` `store.ts` `progression.ts`
+`status.ts` `sim.test.ts` · render: `palette.ts` `scene.ts` · ui: `hud.ts` · `scripts/verify-scene.mjs`.
+
+## Deferred
+
+- Auto-ship chest→wharf **with a resource filter** (safe automation of delivery).
+- The literal sea edge / sailing ships (water-to-sea spine slice) — wharf is a placeable-position
+  anchor until then.
+
 ## Status
-- [ ] In progress · [ ] Complete
+- [x] Complete

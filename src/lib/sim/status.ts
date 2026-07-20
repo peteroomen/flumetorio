@@ -64,24 +64,20 @@ function dist(px: number, py: number, tx: number, ty: number): number {
 }
 
 // Is building `b` a valid place to deposit resource `res`? (kind-level, ignoring distance)
+// The Wharf and a chest accept anything; machines accept their specific inputs.
 export function isDropTargetKind(b: Building, res: ResourceKind): boolean {
+  if (b.kind === 'wharf' || b.kind === 'stockpile') return true;
   switch (res) {
     case 'iron':
-      return b.kind === 'blacksmith' || b.kind === 'stockpile';
+      return b.kind === 'blacksmith';
     case 'log':
-      return (
-        b.kind === 'flumeHead' ||
-        b.kind === 'sawmill' ||
-        b.kind === 'clamp' ||
-        b.kind === 'pitsaw' ||
-        b.kind === 'stockpile'
-      );
+      return b.kind === 'flumeHead' || b.kind === 'sawmill' || b.kind === 'clamp' || b.kind === 'pitsaw';
     case 'ore':
-      return b.kind === 'incline' || b.kind === 'furnace' || b.kind === 'stockpile';
+      return b.kind === 'incline' || b.kind === 'furnace';
     case 'charcoal':
-      return b.kind === 'furnace' || b.kind === 'stockpile';
+      return b.kind === 'furnace';
     default:
-      return b.kind === 'stockpile';
+      return false;
   }
 }
 
@@ -99,13 +95,15 @@ export function promptFor(state: GameState): string | null {
       const d = dist(p.x, p.y, b.tx, b.ty);
       if (d > REACH + 0.2) continue;
       const verb =
-        b.kind === 'blacksmith'
-          ? `Q — deliver ${res} to the blacksmith`
-          : b.kind === 'flumeHead'
-            ? 'Q — tip logs into the flume'
-            : b.kind === 'stockpile'
-              ? `Q — stock ${res} (delivers to the Company)`
-              : `Q — load ${res} into the ${b.kind}`;
+        b.kind === 'wharf'
+          ? `Q — ship ${res} to the Company Wharf`
+          : b.kind === 'blacksmith'
+            ? `Q — deliver ${res} to the blacksmith`
+            : b.kind === 'flumeHead'
+              ? 'Q — tip logs into the flume'
+              : b.kind === 'stockpile'
+                ? `Q — stock ${res} in the chest`
+                : `Q — load ${res} into the ${b.kind}`;
       if (!best || d < best.d) best = { d, verb };
     }
     if (best) return best.verb;

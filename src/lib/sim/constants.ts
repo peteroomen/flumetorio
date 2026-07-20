@@ -80,5 +80,10 @@ export const INCLINE_BUFFER_CAP = 12;
 // Forestry — replant.
 export const SAPLING_GROW_MS = 45_000; // a stump regrows into a fellable tree
 
+// Chests (stockpiles) hold real stacks; building costs draw from the barrow + nearby chests.
+export const STOCKPILE_CAP = 50; // total items a chest holds (across resources)
+export const BUILD_SOURCE_RADIUS = 3; // tiles: how far a build may pull materials from chests
+export const STOCKPILE_FEED_MS = 500; // cadence a chest pushes/pulls one unit to/from neighbours
+
 export const SAVE_KEY = 'flumetorio-save-v1';
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = 2; // economy restructure: no bank, chests hold stacks, wharf delivery
