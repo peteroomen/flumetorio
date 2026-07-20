@@ -276,7 +276,7 @@ describe('guidance derivations', () => {
 
     const furnace = mkBuilding({ kind: 'furnace', tx: 5, ty: 27, heat: 0, cold: true });
     g.buildings.push(furnace);
-    expect(buildingStatus(g, furnace)?.key).toBe('cold');
+    expect(buildingStatus(g, furnace)?.key).toBe('needsFuel');
   });
 
   it('offers the right contextual prompt', () => {
@@ -292,6 +292,28 @@ describe('guidance derivations', () => {
     g.player.x = 8.5;
     g.player.y = 8.5;
     expect(promptFor(g)).toBe('Q — tip logs into the flume');
+  });
+
+  it('a cold furnace asks for fuel; a hot one asks for ore', () => {
+    const g = getGame();
+    const cold = mkBuilding({ kind: 'furnace', tx: 5, ty: 25, heat: 0, cold: true });
+    const hot = mkBuilding({ kind: 'furnace', tx: 8, ty: 25, heat: 80, cold: false, input: { charcoal: 5 } });
+    g.buildings.push(cold, hot);
+    const cs = buildingStatus(g, cold)!;
+    expect(cs.key).toBe('needsFuel');
+    expect(cs.want).toBe('charcoal');
+    expect(buildingStatus(g, hot)?.want).toBe('ore');
+  });
+
+  it('a blacksmith beside a stockpile draws banked iron toward the goal', () => {
+    const g = getGame();
+    g.buildings.push(mkBuilding({ kind: 'blacksmith', tx: 5, ty: 25 }));
+    g.buildings.push(mkBuilding({ kind: 'stockpile', tx: 6, ty: 25 }));
+    g.bank.iron = 4;
+    for (let i = 0; i < 6; i++) actions.simStep(100);
+    const smith = g.buildings.find((b) => b.kind === 'blacksmith')!;
+    expect(smith.delivered ?? 0).toBeGreaterThan(0);
+    expect(g.bank.iron).toBeLessThan(4);
   });
 
   it('knows valid drop targets by resource', () => {

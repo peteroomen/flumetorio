@@ -118,6 +118,16 @@ either way (ADR 001 commits us to this checkpoint).
 
 **Parking lot** (each future slice must name its desire chain, GDD §11):
 
+- **Iso-dimetric renderer + visual-state language (art direction LOCKED 2026-07-20).** Rebuild
+  buildings in true 2:1 dimetric (Settlers II/III north-star; see the published art-direction plate),
+  composing from a reusable component kit (chimney / cog / drive-shaft / rope-bucket hoist / braced
+  trestle / lit window) rendered onto the iso face planes; chunky block earth; clean water. **Bake
+  in machine-state animation** — furnace glows+smokes *while smelting*, saw blade cuts, waterwheel/
+  shaft spin only when powered+working, clamp smokes, incline cart runs — so state reads from the
+  machine, not a caption. **Dial the floating text right down** (keep at most a first-run nudge).
+- **Flume expansion (the fun core — owner: "immense fun", build on it).** Junctions / splitters
+  (branching), sluice-gate control (gating), drawing water/logs directly from **rivers**, longer
+  runs on the braced-trestle kit. Its own juicy slice once the visual work settles.
 - **The demand-pull town (the primary post-MVP arc, GDD §8/§10)** — multi-establishment growth,
   concurrent demands as branching, the symbiotic tool-feedback loop (needs the progression model),
   town-as-blueprint-source. This is the spine everything else hangs demands off.
