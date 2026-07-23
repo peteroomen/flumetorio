@@ -258,7 +258,17 @@ Date: YYYY-MM-DD · Status: Accepted
   badges (no-power/needs-input/output-full/cold), floating action prompts, delivery highlights, and a
   click-to-inspect info panel. 17 Vitest green; verifier passes. Art direction explored first via a
   published pixel-steampunk mockup (Plate II). See `docs/work/2026-07-20-visual-guidance-pass.md`.
-- **Deferred fast-follow:** true low-res pixel-upscale (literal Plate II crispness), flume/sawmill/
-  clamp/blacksmith building art, bigger status badges, sound/juice.
+- **True-dimetric visual pass (2026-07-23, branch `claude/visual-design-pass-review-lnysno`).**
+  Ported the locked art-direction artifact (Plate III · Rev C, pitch B) into the renderer: new
+  `render/kit.ts` component kit (shaded iso boxes, roofs, chimneys+smoke, face-mounted
+  cogs/wheels/windows, sagging shafts, trestles), plate palette ramps, block-earth cliffs with
+  strata, recessed water with bank walls/waterfalls/flow glints, sky backdrop, and all ten
+  buildings re-authored as dimetric volumes (incl. the previously-deferred flume-as-directional-
+  trough, head-gate, incline rails+cart, clamp mound). One sorted back-to-front dynamic pass —
+  the player walks behind buildings correctly. Render-only; sim untouched. 19 Vitest + verifier
+  green. See `docs/work/2026-07-23-dimetric-visual-pass.md`.
+- **Deferred fast-follow:** true low-res pixel-upscale (integer zoom, literal plate crispness),
+  sound/juice. Known sim nits reported in the 2026-07-23 session review (flume-without-trestles
+  destroys logs; status.ts caps duplicated from constants; HUD rebuilds DOM every frame).
 - **Next:** balance/feel pass after live play (constants in `src/lib/sim/constants.ts`), the pixel
   fast-follow, then post-MVP arcs (demand-pull town, steam, rail, aqueducts) per `docs/ROADMAP.md`.
