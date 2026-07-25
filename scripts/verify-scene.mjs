@@ -119,6 +119,32 @@ try {
   });
   check('furnace smelts iron end-to-end in-browser', iron > 0, `iron=${iron}`);
 
+  // The plateway: a level route between two docks moves a lot end to end, in-browser.
+  const hauled = await page.evaluate(() => {
+    const { getGame, actions, rail } = window.__fw;
+    actions.init(1);
+    const g = getGame();
+    const mk = (kind, tx, ty, id) => ({
+      id,
+      kind,
+      tx,
+      ty,
+      input: {},
+      output: {},
+      progress: 0,
+    });
+    const a = mk('railDock', 5, 26, 1);
+    const b = mk('railDock', 10, 26, 2);
+    g.buildings.push(a, b);
+    for (let i = 1; i <= 4; i++) g.buildings.push(mk('rail', 5 + i, 26, 100 + i));
+    rail.recomputeRailRoutes(g);
+    a.input.ore = 5;
+    for (let i = 0; i < 300; i++) rail.tickRail(g, 100);
+    return { arrived: b.output.ore ?? 0, wagons: g.buildings.filter((x) => x.wagon).length };
+  });
+  check('plateway hauls a lot between docks in-browser', hauled.arrived === 5, `arrived=${hauled.arrived}`);
+  check('exactly one wagon per route', hauled.wagons === 1, `wagons=${hauled.wagons}`);
+
   // Screenshots: fresh valley.
   await page.evaluate(() => {
     window.__fw.actions.init(1);

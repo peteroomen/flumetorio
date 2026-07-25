@@ -38,11 +38,11 @@ export function initialLetters(): Letter[] {
     {
       id: 'l4_blacksmith',
       title: 'The blacksmith has opened',
-      body: 'A smith has taken premises down-valley. Build a Blacksmith (press 0) and supply it 10 iron — carry iron there (Q), or set a stockpile beside it and it draws banked iron itself. The town is then begun.',
+      body: 'A smith has taken premises down-valley. Build a Blacksmith (press 0) and supply it 10 iron — carry iron there (Q), or set a stockpile beside it and it draws banked iron itself. The town is then begun, and the Company will send drawings for a plateway: iron rails and a horse to spare your back on the flat.',
       wantResource: 'iron',
       wantCount: 10,
       sink: 'blacksmith',
-      unlocks: [],
+      unlocks: ['railDock', 'rail'],
       done: false,
     },
   ];

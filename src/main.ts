@@ -9,6 +9,7 @@ import { actions, getGame } from './lib/sim/store';
 import { loadGame } from './lib/sim/save';
 import * as machines from './lib/sim/machines';
 import * as movers from './lib/sim/movers';
+import * as rail from './lib/sim/rail';
 import { view } from './ui/view';
 
 async function main(): Promise<void> {
@@ -27,7 +28,7 @@ async function main(): Promise<void> {
   const hud = new Hud(parent, input);
 
   // Instrument bridge for verification / debugging (ADR 002).
-  (window as unknown as { __fw: unknown }).__fw = { getGame, actions, view, machines, movers, scene };
+  (window as unknown as { __fw: unknown }).__fw = { getGame, actions, view, machines, movers, rail, scene };
 
   startLoop(scene, hud, input);
 }

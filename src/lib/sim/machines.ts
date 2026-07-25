@@ -170,7 +170,15 @@ function adjacentStockpile(state: GameState, b: Building): boolean {
 // Machine outputs bank themselves if a stockpile sits beside them (the automation reward).
 export function bankAllOutputs(state: GameState): void {
   for (const b of state.buildings) {
-    if (b.kind !== 'pitsaw' && b.kind !== 'sawmill' && b.kind !== 'clamp' && b.kind !== 'furnace')
+    // A dock beside a stockpile banks what the wagon brought, so rail→stockpile automates the
+    // last metre the same way a mill beside one does.
+    if (
+      b.kind !== 'pitsaw' &&
+      b.kind !== 'sawmill' &&
+      b.kind !== 'clamp' &&
+      b.kind !== 'furnace' &&
+      b.kind !== 'railDock'
+    )
       continue;
     if (!adjacentStockpile(state, b)) continue;
     for (const res of Object.keys(b.output) as ResourceKind[]) {

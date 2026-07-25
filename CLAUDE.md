@@ -316,6 +316,19 @@ Date: YYYY-MM-DD · Status: Accepted
   vocabulary (recessed ballast bed so the route reads as a ribbon at 1×, real quarter-curves, brass
   throw levers at points, lot visible in the wagon bed). The gravity incline is treated as rail-zero
   and the family the plateway must match.
+- **The first rails shipped (2026-07-25, branch `claude/game-visual-improvements-4liquw`).** The
+  smallest slice from `docs/design/rail-pitch.md`: a **horse-drawn plateway**. New `railDock`
+  (terminus you load/collect at) + `rail` (track), routes traced from dock to dock, **exactly one
+  wagon per route** owned by the lower-id dock. `recomputeRailRoutes` is `recomputeFlumePaths` with
+  `===` instead of `<=` on height — and that one character *is* the design: water flows downhill, a
+  loaded wagon does neither. **Gradient refused at placement with a readable reason** ("A loaded
+  wagon cannot climb"), because that refusal is the whole desire chain: relief on the flat, then
+  HUNGER as goods pile at every rise → rope-worked inclines → steam. Costs iron, so it ties back to
+  the furnace the MVP taught you to run; unlocked by the blacksmith letter, so the post-MVP arc opens
+  as the reward for finishing the MVP one. Render: recessed ballast bed (the route reads as a ribbon
+  at 1×), sleepers, iron edge-rails sweeping through corners as real quarter-curves, a dock with a
+  gas lamp, and a wagon built in *world* space from `kit.box()` with the lot visible in the bed.
+  26 Vitest + verifier (2 new in-browser rail checks) green. See `docs/work/2026-07-25-first-rails.md`.
 - **Deferred fast-follow:** true low-res pixel-upscale (integer zoom, literal plate crispness),
   sound/juice. Known sim nits reported in the 2026-07-23 session review (flume-without-trestles
   destroys logs; status.ts caps duplicated from constants; HUD rebuilds DOM every frame).

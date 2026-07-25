@@ -39,7 +39,9 @@ export type BuildingKind =
   | 'clamp'
   | 'incline'
   | 'furnace'
-  | 'blacksmith';
+  | 'blacksmith'
+  | 'rail'
+  | 'railDock';
 
 // A machine's internal buffers keyed by resource.
 export type Buffers = Partial<Record<ResourceKind, number>>;
@@ -67,6 +69,18 @@ export interface Building {
   powered?: boolean;
   // blacksmith-only: how much iron delivered
   delivered?: number;
+  // railDock-only: set on the route's owning dock (the lower id of the pair)
+  wagon?: Wagon;
+  routeMateId?: number; // the dock at the far end of this dock's route, if any
+}
+
+// One horse-drawn wagon shuttling a route. A wagon holds one lot — batch, never flow.
+export interface Wagon {
+  pos: number; // 0..path.length-1 along the owning dock's path
+  dir: 1 | -1;
+  cargo: ResourceKind | null;
+  count: number;
+  dwell: number; // ms remaining loading/unloading at an end
 }
 
 // Items riding a flume (in transit).

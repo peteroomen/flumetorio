@@ -82,6 +82,20 @@ export const BUILDINGS: Record<BuildingKind, BuildingDef> = {
     cost: {},
     hotkey: '0',
   },
+  railDock: {
+    kind: 'railDock',
+    label: 'Loading dock',
+    blurb: 'A terminus for the plateway. Load goods here (Q); a wagon carries them to the far dock.',
+    cost: { plank: 6, iron: 2 },
+    hotkey: 't',
+  },
+  rail: {
+    kind: 'rail',
+    label: 'Plateway',
+    blurb: 'Iron edge-rails. Must stay level — a loaded wagon cannot climb a terrace.',
+    cost: { iron: 1 },
+    hotkey: 'r',
+  },
 };
 
 // Multi-tile? All MVP buildings occupy a single tile for simplicity.
@@ -143,11 +157,27 @@ export function placementError(
       if (!bordersDrop) return 'An incline needs a downhill step — build it at a terrace edge.';
       return null;
     }
+    case 'rail': {
+      // Must extend from a dock or another rail, and must join it on the LEVEL. This refusal is
+      // the arc's whole desire chain — a loaded wagon cannot climb — so it is never silent.
+      if (tile.terrain === 'forest') return 'Fell the tree here first.';
+      const neighbours = state.buildings.filter(
+        (b) =>
+          (b.kind === 'rail' || b.kind === 'railDock') &&
+          Math.abs(b.tx - tx) + Math.abs(b.ty - ty) === 1,
+      );
+      if (neighbours.length === 0) return 'Rails must run from a loading dock or another rail.';
+      const here = heightAt(tiles, tx, ty);
+      if (!neighbours.some((b) => heightAt(tiles, b.tx, b.ty) === here))
+        return 'A loaded wagon cannot climb — the plateway must stay level.';
+      return null;
+    }
     case 'pitsaw':
     case 'sawmill':
     case 'clamp':
     case 'furnace':
     case 'stockpile':
+    case 'railDock':
     case 'blacksmith':
       if (tile.terrain === 'forest') return 'Fell the tree here first.';
       return null;

@@ -5,6 +5,8 @@ import { tickMachines, bankAllOutputs } from './machines';
 import { recomputeFlumePaths, tickFlume, tickIncline, tickFeeders } from './movers';
 import { actions, getGame, makeInitialState, checkLetters } from './store';
 import { placementError } from './buildings';
+import { recomputeRailRoutes, tickRail } from './rail';
+import { allUnlocksFor } from './progression';
 import { buildingStatus, isDropTargetKind, promptFor } from './status';
 import type { Building, BuildingKind, GameState } from './types';
 
@@ -330,5 +332,84 @@ describe('serialization', () => {
     expect(clone.tiles.length).toBe(g.tiles.length);
     expect(clone.player.x).toBe(g.player.x);
     expect(heightAt(clone.tiles, 5, 3)).toBe(heightAt(g.tiles, 5, 3));
+  });
+});
+
+describe('the plateway', () => {
+  // A level run on the works terrace (rows 22+ are all height 0).
+  function layRoute(g: GameState, y = 26, len = 4): { a: Building; b: Building } {
+    const a = mkBuilding({ kind: 'railDock', tx: 5, ty: y, id: 1 });
+    const b = mkBuilding({ kind: 'railDock', tx: 5 + len + 1, ty: y, id: 2 });
+    g.buildings.push(a, b);
+    for (let i = 1; i <= len; i++) {
+      g.buildings.push(mkBuilding({ kind: 'rail', tx: 5 + i, ty: y, id: 100 + i }));
+    }
+    recomputeRailRoutes(g);
+    return { a, b };
+  }
+
+  it('refuses to climb — rails must join on the level', () => {
+    const g = makeInitialState(1);
+    // BAND_MID_MAX_Y = 21, so row 21 is height 1 and row 22 is height 0: a terrace step.
+    expect(heightAt(g.tiles, 8, 21)).not.toBe(heightAt(g.tiles, 8, 22));
+    g.buildings.push(mkBuilding({ kind: 'railDock', tx: 8, ty: 22 }));
+    const err = placementError(g, 'rail', 8, 21);
+    expect(err).toMatch(/cannot climb/i);
+    // ...but a level neighbour is fine
+    expect(placementError(g, 'rail', 9, 22)).toBeNull();
+  });
+
+  it('will not start a run in mid-air', () => {
+    const g = makeInitialState(1);
+    expect(placementError(g, 'rail', 5, 26)).toMatch(/loading dock or another rail/i);
+  });
+
+  it('runs exactly one wagon per route, owned by the lower-id dock', () => {
+    const g = makeInitialState(1);
+    const { a, b } = layRoute(g);
+    expect(a.wagon).toBeDefined();
+    expect(b.wagon).toBeUndefined();
+    expect(a.routeMateId).toBe(b.id);
+    expect(a.path?.length).toBe(6); // dock + 4 rails + dock
+  });
+
+  it('carries a lot from one dock to the other', () => {
+    const g = makeInitialState(1);
+    const { a, b } = layRoute(g);
+    a.input.ore = 5;
+    drive((dt) => tickRail(g, dt), 20);
+    expect(a.input.ore ?? 0).toBe(0);
+    expect(b.output.ore ?? 0).toBe(5);
+  });
+
+  it('leaves a dock with no second terminus without a wagon, and says so', () => {
+    const g = makeInitialState(1);
+    const lone = mkBuilding({ kind: 'railDock', tx: 5, ty: 26, id: 1 });
+    g.buildings.push(lone, mkBuilding({ kind: 'rail', tx: 6, ty: 26, id: 2 }));
+    recomputeRailRoutes(g);
+    expect(lone.wagon).toBeUndefined();
+    expect(buildingStatus(g, lone)?.label).toMatch(/no route/i);
+  });
+
+  it('accepts any resource at a dock, and survives a save round-trip', () => {
+    const g = makeInitialState(1);
+    const { a } = layRoute(g);
+    expect(isDropTargetKind(a, 'charcoal')).toBe(true);
+    expect(isDropTargetKind(a, 'iron')).toBe(true);
+    a.input.plank = 3;
+    drive((dt) => tickRail(g, dt), 4);
+    const clone = JSON.parse(JSON.stringify(g)) as GameState;
+    recomputeRailRoutes(clone);
+    const owner = clone.buildings.find((x) => x.id === a.id)!;
+    expect(owner.wagon).toBeDefined();
+    expect(owner.path?.length).toBe(6);
+  });
+
+  it('arrives as the reward for finishing the MVP arc', () => {
+    const g = makeInitialState(1);
+    expect(g.unlocked).not.toContain('rail');
+    for (const l of g.letters) l.done = true;
+    expect(allUnlocksFor(g.letters)).toContain('rail');
+    expect(allUnlocksFor(g.letters)).toContain('railDock');
   });
 });

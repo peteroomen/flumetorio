@@ -77,6 +77,13 @@ export const INCLINE_INTERVAL_MS = 1400; // one cart trip cadence
 export const INCLINE_CART_CAP = 3; // items per trip
 export const INCLINE_BUFFER_CAP = 12;
 
+// Rail: a horse-drawn plateway. Level ground only — a loaded wagon cannot climb, and that
+// refusal is the whole point (see docs/design/rail-pitch.md). One wagon per route.
+export const RAIL_SPEED = 1.9; // tiles / second — a horse walks, it does not race
+export const WAGON_CAPACITY = 8; // one lot per wagon
+export const WAGON_DWELL_MS = 900; // pause at each end to load / unload
+export const RAIL_DOCK_CAP = 16; // per-resource buffer at each end
+
 // Forestry — replant.
 export const SAPLING_GROW_MS = 45_000; // a stump regrows into a fellable tree
 

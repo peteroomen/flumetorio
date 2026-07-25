@@ -42,6 +42,15 @@ export function buildingStatus(state: GameState, b: Building): Status | null {
         return { key: 'outputFull', attention: true, label: 'Full of iron — collect it' };
       return { key: 'running', attention: false, label: 'Smelting' };
     }
+    case 'railDock': {
+      if (!b.routeMateId)
+        return { key: 'noPower', attention: true, label: 'No route — run rails to a second dock' };
+      const waiting = Object.values(b.input).reduce((n, v) => n + (v ?? 0), 0);
+      const arrived = Object.values(b.output).reduce((n, v) => n + (v ?? 0), 0);
+      if (arrived > 0) return { key: 'outputFull', attention: true, label: 'Goods arrived — collect them' };
+      if (waiting < 1) return { key: 'needsInput', attention: true, label: 'Idle — load goods for the wagon' };
+      return { key: 'running', attention: false, label: 'Hauling' };
+    }
     case 'incline': {
       if (count(b.input, 'ore') < 1 && count(b.output, 'ore') < 1)
         return { key: 'needsInput', attention: true, label: 'Idle — load ore at the top' };
@@ -65,6 +74,7 @@ function dist(px: number, py: number, tx: number, ty: number): number {
 
 // Is building `b` a valid place to deposit resource `res`? (kind-level, ignoring distance)
 export function isDropTargetKind(b: Building, res: ResourceKind): boolean {
+  if (b.kind === 'railDock') return true; // a terminus takes anything
   switch (res) {
     case 'iron':
       return b.kind === 'blacksmith' || b.kind === 'stockpile';
@@ -105,7 +115,9 @@ export function promptFor(state: GameState): string | null {
             ? 'Q — tip logs into the flume'
             : b.kind === 'stockpile'
               ? `Q — stock ${res} (delivers to the Company)`
-              : `Q — load ${res} into the ${b.kind}`;
+              : b.kind === 'railDock'
+                ? `Q — load ${res} onto the plateway`
+                : `Q — load ${res} into the ${b.kind}`;
       if (!best || d < best.d) best = { d, verb };
     }
     if (best) return best.verb;
@@ -125,6 +137,10 @@ export function promptFor(state: GameState): string | null {
     furnace: 'iron',
   };
   for (const b of state.buildings) {
+    if (b.kind === 'railDock' && dist(p.x, p.y, b.tx, b.ty) <= REACH) {
+      const got = (Object.keys(b.output) as ResourceKind[]).find((k) => (b.output[k] ?? 0) > 0);
+      if (got) return `E — collect ${got} from the dock`;
+    }
     const r = outMap[b.kind];
     if (r && (b.output[r] ?? 0) > 0 && dist(p.x, p.y, b.tx, b.ty) <= REACH)
       return `E — collect ${r}`;

@@ -4,7 +4,7 @@
 // Terrain is cached; everything that stands on it joins one back-to-front dynamic pass.
 
 import { Application, Container, Graphics, Text, TextStyle } from 'pixi.js';
-import type { Building, BuildingKind, GameState, Terrain } from '@/lib/sim/types';
+import type { Building, BuildingKind, GameState, ResourceKind, Terrain } from '@/lib/sim/types';
 import { bandHeight, heightAt, idx, inBounds } from '@/lib/sim/world';
 import { INCLINE_INTERVAL_MS, MAP_H, MAP_W, WATERWHEEL_POWER_RADIUS } from '@/lib/sim/constants';
 import { placementError, waterNeighbour } from '@/lib/sim/buildings';
@@ -56,6 +56,8 @@ const SHADOW_HZ: Record<BuildingKind, number> = {
   incline: 0.4,
   furnace: 2.4,
   blacksmith: 1.5,
+  rail: 0.12,
+  railDock: 0.7,
 };
 
 // Footprint each kind casts from, as [insetX, insetY, width, depth] in tiles — copied from the
@@ -69,6 +71,7 @@ const SHADOW_FOOT: Partial<Record<BuildingKind, [number, number, number, number]
   furnace: [0.06, 0.06, 0.88, 0.88], // the brick hearth course, not the iron stack above it
   waterwheel: [0.2, 0.2, 0.6, 0.6],
   pitsaw: [0.2, 0.2, 0.6, 0.6],
+  railDock: [0.1, 0.1, 0.8, 0.8],
 };
 
 // A tree/stump's off-centre stand within its tile. Shared by the canopy and the stump it leaves,
@@ -110,6 +113,8 @@ const BADGE_Z: Record<BuildingKind, number> = {
   incline: 1.1,
   furnace: 2.6,
   blacksmith: 2.0,
+  rail: 0.6,
+  railDock: 1.5,
 };
 
 interface Dir {
@@ -527,6 +532,7 @@ export class Scene {
     }
 
     const flumeConns = this.computeFlumeConns(state);
+    const railConns = this.computeRailConns(state);
 
     interface Entry {
       key: number;
@@ -544,10 +550,20 @@ export class Scene {
       entries.push({ key: ore.tx + ore.ty + 1, draw: () => this.drawOre(g, tiles, ore.tx, ore.ty, ore.remaining) });
     }
     for (const b of state.buildings) {
+      const conn = b.kind === 'rail' ? railConns.get(idx(b.tx, b.ty)) : flumeConns.get(idx(b.tx, b.ty));
       entries.push({
-        key: b.tx + b.ty + 1,
-        draw: () => this.drawBuilding(g, state, b, t, flumeConns.get(idx(b.tx, b.ty))),
+        key: b.tx + b.ty + (b.kind === 'rail' ? 0.02 : 1), // track lies on the ground, under things
+        draw: () => this.drawBuilding(g, state, b, t, conn),
       });
+      // the wagon sorts by where it actually is, so it passes behind and in front correctly
+      if (b.kind === 'railDock' && b.wagon && b.path && b.path.length >= 2) {
+        const w = b.wagon;
+        const i = Math.max(0, Math.min(b.path.length - 2, Math.floor(w.pos)));
+        const f = Math.max(0, Math.min(1, w.pos - i));
+        const wx = b.path[i].tx + (b.path[i + 1].tx - b.path[i].tx) * f;
+        const wy = b.path[i].ty + (b.path[i + 1].ty - b.path[i].ty) * f;
+        entries.push({ key: wx + wy + 1.1, draw: () => this.drawWagon(g, state, b, t) });
+      }
     }
     for (const gi of state.ground) {
       const h = heightAt(tiles, gi.tx, gi.ty);
@@ -597,6 +613,47 @@ export class Scene {
 
     entries.sort((a, b) => a.key - b.key);
     for (const e of entries) e.draw();
+  }
+
+  // Per-tile track connectivity, from each owning dock's route (fallback: adjacency, so track
+  // you've laid but not yet joined to a second dock still draws as track).
+  private computeRailConns(state: GameState): Map<number, FlumeConn> {
+    const conns = new Map<number, FlumeConn>();
+    const ensure = (tx: number, ty: number): FlumeConn => {
+      const k = idx(tx, ty);
+      let c = conns.get(k);
+      if (!c) {
+        c = { ins: [], outs: [] };
+        conns.set(k, c);
+      }
+      return c;
+    };
+    const addDir = (list: Dir[], d: Dir) => {
+      if (!list.some((x) => x.dx === d.dx && x.dy === d.dy)) list.push(d);
+    };
+    for (const dock of state.buildings) {
+      if (dock.kind !== 'railDock' || !dock.path) continue;
+      for (let i = 0; i < dock.path.length - 1; i++) {
+        const a = dock.path[i];
+        const b = dock.path[i + 1];
+        const d = { dx: b.tx - a.tx, dy: b.ty - a.ty };
+        addDir(ensure(a.tx, a.ty).outs, d);
+        addDir(ensure(b.tx, b.ty).ins, { dx: -d.dx, dy: -d.dy });
+      }
+    }
+    for (const b of state.buildings) {
+      if (b.kind !== 'rail') continue;
+      const c = ensure(b.tx, b.ty);
+      if (c.ins.length || c.outs.length) continue;
+      for (const d of CARD) {
+        const hit = state.buildings.some(
+          (o) => (o.kind === 'rail' || o.kind === 'railDock') && o.tx === b.tx + d.dx && o.ty === b.ty + d.dy,
+        );
+        if (hit) addDir(c.ins, d);
+      }
+      if (c.ins.length === 0) c.ins.push({ dx: 1, dy: 0 }, { dx: -1, dy: 0 });
+    }
+    return conns;
   }
 
   // Per-tile flume connectivity, derived from every head's computed path (fallback: adjacency).
@@ -813,6 +870,14 @@ export class Scene {
         this.drawFurnace(g, b, h, t);
         break;
       }
+      case 'rail': {
+        this.drawRail(g, b, h, conn);
+        break;
+      }
+      case 'railDock': {
+        this.drawRailDock(g, b, h, t);
+        break;
+      }
       case 'flumeHead':
       case 'flume': {
         this.drawFlume(g, state, b, h, t, conn);
@@ -986,6 +1051,163 @@ export class Scene {
     };
     heap(x + 0.14 - drop.dx * 0.2, y + 0.14 - drop.dy * 0.2, h, b.input.ore ?? 0);
     heap(x + 0.4 + drop.dx * 1.0, y + 0.4 + drop.dy * 1.0, nh, b.output.ore ?? 0);
+  }
+
+  // ---------------- the plateway ----------------
+  // A track piece: a recessed ballast bed (so the route reads as a ribbon at 1x instead of
+  // dissolving into ground clutter), timber sleepers, and two iron edge-rails. A corner sweeps
+  // its rails through the tile centre rather than meeting at a right angle — in dimetric a
+  // mitred corner is very visible and a real quarter-curve costs nothing.
+  private drawRail(g: Graphics, b: Building, h: number, conn?: FlumeConn): void {
+    const x = b.tx;
+    const y = b.ty;
+    const cx = x + 0.5;
+    const cy = y + 0.5;
+    const dirs: Dir[] = [];
+    for (const d of [...(conn?.ins ?? []), ...(conn?.outs ?? [])]) {
+      if (!dirs.some((e) => e.dx === d.dx && e.dy === d.dy)) dirs.push(d);
+    }
+    if (dirs.length === 0) dirs.push({ dx: 1, dy: 0 }, { dx: -1, dy: 0 });
+
+    const GAUGE = 0.14; // half-gauge in tiles; matches the incline's rails so they read as kin
+    // ballast bed, one flat mass across every connected direction
+    for (const d of dirs) {
+      const px = -d.dy * 0.26;
+      const py = d.dx * 0.26;
+      g.poly(
+        flat([
+          project(cx + px, cy + py, h),
+          project(cx + d.dx * 0.5 + px, cy + d.dy * 0.5 + py, h),
+          project(cx + d.dx * 0.5 - px, cy + d.dy * 0.5 - py, h),
+          project(cx - px, cy - py, h),
+        ]),
+      ).fill({ color: COLORS.stoneD });
+    }
+    // sleepers, laid across the run
+    for (const d of dirs) {
+      const px = -d.dy * 0.2;
+      const py = d.dx * 0.2;
+      for (const f of [0.2, 0.36, 0.5]) {
+        const a = project(cx + d.dx * f + px, cy + d.dy * f + py, h + 0.01);
+        const e = project(cx + d.dx * f - px, cy + d.dy * f - py, h + 0.01);
+        g.moveTo(a.x, a.y).lineTo(e.x, e.y).stroke({ width: 2, color: COLORS.woodD });
+      }
+    }
+    // rails — through the centre so a corner sweeps rather than mitres
+    for (const side of [1, -1]) {
+      for (const d of dirs) {
+        const px = -d.dy * GAUGE * side;
+        const py = d.dx * GAUGE * side;
+        const mid = project(cx + px * 0.35, cy + py * 0.35, h + 0.04);
+        const e = project(cx + d.dx * 0.5 + px, cy + d.dy * 0.5 + py, h + 0.04);
+        g.moveTo(mid.x, mid.y).lineTo(e.x, e.y).stroke({ width: 2, color: COLORS.ironXD });
+        // a hairline on the sun side — iron polished by use, not a pale tube
+        g.moveTo(mid.x, mid.y - 1.2).lineTo(e.x, e.y - 1.2).stroke({ width: 0.8, color: COLORS.iron });
+      }
+    }
+  }
+
+  private drawRailDock(g: Graphics, b: Building, h: number, t: number): void {
+    const x = b.tx;
+    const y = b.ty;
+    // a low timber loading stage with an iron-shod edge and a lamp post
+    box(g, x + 0.1, y + 0.1, h, 0.8, 0.8, 0.16, COLORS.wood);
+    box(g, x + 0.14, y + 0.14, h + 0.16, 0.72, 0.72, 0.04, COLORS.woodL);
+    bandAround(g, x + 0.1, y + 0.1, h, 0.8, 0.8, 0.17, COLORS.ironD, 2);
+    // corner bollards
+    for (const [px, py] of [
+      [0.13, 0.13],
+      [0.79, 0.13],
+      [0.13, 0.79],
+    ]) {
+      box(g, x + px, y + py, h + 0.2, 0.08, 0.08, 0.16, COLORS.ironD);
+    }
+    // a gas lamp on the fourth corner — the dock is where you stand at dusk
+    box(g, x + 0.78, y + 0.78, h + 0.2, 0.07, 0.07, 0.5, COLORS.iron);
+    const lamp = project(x + 0.815, y + 0.815, h + 0.76);
+    g.circle(lamp.x, lamp.y, 4).fill({ color: COLORS.glow, alpha: 0.16 });
+    g.circle(lamp.x, lamp.y, 2.2).fill({ color: 0xffcd78, alpha: 0.75 + 0.25 * Math.sin(t * 3) });
+    // what's waiting to leave, stacked on the stage
+    const waiting = Object.entries(b.input).filter(([, n]) => (n ?? 0) > 0);
+    let i = 0;
+    for (const [res, n] of waiting) {
+      for (let k = 0; k < Math.min(3, n ?? 0); k++) {
+        const p = project(x + 0.3 + i * 0.22, y + 0.35, h + 0.2 + k * 0.05);
+        g.rect(p.x - 4, p.y - 3 - k * 2, 8, 3).fill({ color: RESOURCE_COLORS[res as ResourceKind] });
+      }
+      i++;
+      if (i >= 2) break;
+    }
+  }
+
+  // The wagon and its horse, drawn at the wagon's position along the owning dock's route.
+  private drawWagon(g: Graphics, state: GameState, dock: Building, t: number): void {
+    const w = dock.wagon;
+    if (!w || !dock.path || dock.path.length < 2) return;
+    const i = Math.max(0, Math.min(dock.path.length - 2, Math.floor(w.pos)));
+    const f = Math.max(0, Math.min(1, w.pos - i));
+    const a = dock.path[i];
+    const bp = dock.path[i + 1];
+    const wx = a.tx + (bp.tx - a.tx) * f + 0.5;
+    const wy = a.ty + (bp.ty - a.ty) * f + 0.5;
+    const h = heightAt(state.tiles, a.tx, a.ty);
+    const moving = w.dwell <= 0;
+    const sway = moving ? Math.sin(t * 7) * 0.012 : 0;
+    // Track is always axis-aligned, so the wagon is built in WORLD space from the kit and picks
+    // up the same face shading as every building. Drawn as a screen-aligned rect it sat visibly
+    // off the rails on any run that wasn't heading screen-right.
+    const dx = (bp.tx - a.tx) * w.dir;
+    const dy = (bp.ty - a.ty) * w.dir;
+    const alongX = dx !== 0;
+    const halfL = 0.3;
+    const halfW = 0.17;
+    const ex = alongX ? halfL : halfW;
+    const ey = alongX ? halfW : halfL;
+
+    blobShadow(g, wx, wy, h, 0.2, 0.5, 0.22);
+    // wheels, on the rails
+    for (const s of [1, -1]) {
+      const gx = alongX ? 0.16 : 0.14 * s;
+      const gy = alongX ? 0.14 * s : 0.16;
+      for (const e2 of [1, -1]) {
+        const p2 = project(wx + (alongX ? gx * e2 : gx), wy + (alongX ? gy : gy * e2), h + 0.04);
+        g.circle(p2.x, p2.y, 2).fill({ color: COLORS.ironXD });
+      }
+    }
+    // chaldron body — timber, iron-bound
+    box(g, wx - ex, wy - ey + sway, h + 0.06, ex * 2, ey * 2, 0.2, COLORS.wood);
+    bandAround(g, wx - ex, wy - ey + sway, h + 0.06, ex * 2, ey * 2, 0.19, COLORS.ironD, 1.5);
+    // the lot rides visible in the bed — same stacking language as a ground item
+    if (w.cargo && w.count > 0) {
+      const stack = Math.min(3, Math.ceil(w.count / 3));
+      for (let k = 0; k < stack; k++) {
+        box(
+          g,
+          wx - ex * 0.7,
+          wy - ey * 0.7 + sway,
+          h + 0.26 + k * 0.06,
+          ex * 1.4,
+          ey * 1.4,
+          0.06,
+          RESOURCE_COLORS[w.cargo],
+        );
+      }
+    }
+    // the horse, ahead on the trace — the clearest statement that this is not yet steam
+    const hx = wx + dx * 0.66;
+    const hy = wy + dy * 0.66;
+    const hp = project(hx, hy, h);
+    const step = moving ? Math.sin(t * 6) * 1.3 : 0;
+    blobShadow(g, hx, hy, h, 0.13, 0.7, 0.2);
+    const tr0 = project(wx + dx * 0.3, wy + dy * 0.3, h + 0.2);
+    const tr1 = project(hx - dx * 0.16, hy - dy * 0.16, h + 0.18);
+    g.moveTo(tr0.x, tr0.y).lineTo(tr1.x, tr1.y).stroke({ width: 1, color: COLORS.woodD });
+    g.rect(hp.x - 3, hp.y - 6 + step, 2, 6).fill({ color: 0x53381f }); // legs
+    g.rect(hp.x + 1, hp.y - 6 - step, 2, 6).fill({ color: 0x53381f });
+    box(g, hx - 0.16, hy - 0.1, h + 0.26, 0.32, 0.2, 0.18, 0x6b4a30); // barrel
+    const fwd = (dx - dy) > 0 ? 1 : -1;
+    g.rect(hp.x + fwd * 4 - 1.5, hp.y - 19, 3, 6).fill({ color: 0x6b4a30 }); // neck
+    g.rect(hp.x + fwd * 5 - 2, hp.y - 21, 5, 3).fill({ color: 0x7d5738 }); // head
   }
 
   private drawFlume(g: Graphics, state: GameState, b: Building, h: number, t: number, conn?: FlumeConn): void {
