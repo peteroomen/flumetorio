@@ -181,16 +181,20 @@ try {
     const g = getGame();
     const col = 8;
     const mk = (kind, tx, ty, id) => ({ id, kind, tx, ty, input: {}, output: {}, progress: 0 });
-    g.buildings.push(mk('flumeHead', col, 8, 1));
+    // Rows 3..27 span all three terraces in every column: the band edges wander by at most
+    // BAND_WOBBLE (3), so the top edge is never above row 7 nor the mid edge below row 24.
+    const TOP = 3;
+    const BOT = 27;
+    g.buildings.push(mk('flumeHead', col, TOP, 1));
     let id = 10;
-    for (let ty = 9; ty <= 25; ty++) g.buildings.push(mk('flume', col, ty, id++));
+    for (let ty = TOP + 1; ty <= BOT; ty++) g.buildings.push(mk('flume', col, ty, id++));
     for (const t of g.trees) if (t.tx === col) t.state = 'stump';
     movers.recomputeFlumePaths(g);
     scene.markTerrainDirty();
     await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
     const decks = [];
     const ground = [];
-    for (let ty = 8; ty <= 25; ty++) {
+    for (let ty = TOP; ty <= BOT; ty++) {
       decks.push(scene.flumeDeckAt(col, ty));
       ground.push(g.tiles[ty * 34 + col].height);
     }

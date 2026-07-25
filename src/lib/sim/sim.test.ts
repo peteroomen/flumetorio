@@ -1,6 +1,14 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import { generateWorld, bandHeight, heightAt } from './world';
-import { CLAMP_OUT_CAP, FURNACE_IRON_CAP, HEIGHT_BOTTOM, HEIGHT_MID, HEIGHT_TOP } from './constants';
+import {
+  CLAMP_OUT_CAP,
+  FURNACE_IRON_CAP,
+  HEIGHT_BOTTOM,
+  HEIGHT_MID,
+  HEIGHT_TOP,
+  MAP_H,
+  MAP_W,
+} from './constants';
 import { tickMachines, bankAllOutputs } from './machines';
 import { recomputeFlumePaths, tickFlume, tickIncline, tickFeeders } from './movers';
 import { actions, getGame, makeInitialState, checkLetters } from './store';
@@ -29,9 +37,34 @@ describe('world generation', () => {
   });
 
   it('lays three terrace bands', () => {
-    expect(bandHeight(3)).toBe(HEIGHT_TOP);
-    expect(bandHeight(15)).toBe(HEIGHT_MID);
-    expect(bandHeight(30)).toBe(HEIGHT_BOTTOM);
+    expect(bandHeight(5, 3)).toBe(HEIGHT_TOP);
+    expect(bandHeight(5, 15)).toBe(HEIGHT_MID);
+    expect(bandHeight(5, 30)).toBe(HEIGHT_BOTTOM);
+  });
+
+  it('gives every column all three terraces, in order, and never inverts them', () => {
+    for (let tx = -8; tx < MAP_W + 8; tx++) {
+      const col: number[] = [];
+      for (let ty = 0; ty < MAP_H; ty++) col.push(bandHeight(tx, ty));
+      // monotonically non-increasing down the map, and all three bands present
+      for (let i = 1; i < col.length; i++) expect(col[i]).toBeLessThanOrEqual(col[i - 1]);
+      expect(col).toContain(HEIGHT_TOP);
+      expect(col).toContain(HEIGHT_MID);
+      expect(col).toContain(HEIGHT_BOTTOM);
+      // the mid terrace must stay deep enough to build on
+      expect(col.filter((h) => h === HEIGHT_MID).length).toBeGreaterThanOrEqual(5);
+    }
+  });
+
+  it('wanders the terrace edges instead of ruling them straight', () => {
+    const edges = new Set<number>();
+    for (let tx = 0; tx < MAP_W; tx++) {
+      let ty = 0;
+      while (ty < MAP_H && bandHeight(tx, ty) === HEIGHT_TOP) ty++;
+      edges.add(ty);
+    }
+    // a straight boundary would give exactly one distinct edge row across the whole map
+    expect(edges.size).toBeGreaterThan(2);
   });
 
   it('produces trees and an ore outcrop', () => {
@@ -350,13 +383,27 @@ describe('the plateway', () => {
 
   it('refuses to climb — rails must join on the level', () => {
     const g = makeInitialState(1);
-    // BAND_MID_MAX_Y = 21, so row 21 is height 1 and row 22 is height 0: a terrace step.
-    expect(heightAt(g.tiles, 8, 21)).not.toBe(heightAt(g.tiles, 8, 22));
-    g.buildings.push(mkBuilding({ kind: 'railDock', tx: 8, ty: 22 }));
-    const err = placementError(g, 'rail', 8, 21);
-    expect(err).toMatch(/cannot climb/i);
+    // Find a real terrace step rather than assuming one at a fixed row: the band boundaries
+    // wander per column, so a hard-coded row is exactly the assumption this must not make.
+    let step: { tx: number; low: number; high: number } | null = null;
+    for (let tx = 2; tx < MAP_W - 2 && !step; tx++) {
+      for (let ty = 2; ty < MAP_H - 2; ty++) {
+        const a = heightAt(g.tiles, tx, ty);
+        const b = heightAt(g.tiles, tx, ty + 1);
+        const dry = g.tiles[ty * MAP_W + tx].terrain !== 'water';
+        const dryBelow = g.tiles[(ty + 1) * MAP_W + tx].terrain !== 'water';
+        if (a > b && dry && dryBelow) {
+          step = { tx, high: ty, low: ty + 1 };
+          break;
+        }
+      }
+    }
+    expect(step).not.toBeNull();
+    const { tx, low, high } = step!;
+    g.buildings.push(mkBuilding({ kind: 'railDock', tx, ty: low }));
+    expect(placementError(g, 'rail', tx, high)).toMatch(/cannot climb/i);
     // ...but a level neighbour is fine
-    expect(placementError(g, 'rail', 9, 22)).toBeNull();
+    expect(placementError(g, 'rail', tx + 1, low)).toBeNull();
   });
 
   it('will not start a run in mid-air', () => {

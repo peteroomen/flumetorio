@@ -324,7 +324,7 @@ export class Scene {
     g.clear();
     this.waterAnim = [];
     const tiles = state.tiles;
-    const hOf = (tx: number, ty: number) => (inBounds(tx, ty) ? tiles[idx(tx, ty)].height : bandHeight(ty));
+    const hOf = (tx: number, ty: number) => (inBounds(tx, ty) ? tiles[idx(tx, ty)].height : bandHeight(tx, ty));
     const isWater = (tx: number, ty: number) => inBounds(tx, ty) && tiles[idx(tx, ty)].terrain === 'water';
     const surfOf = (tx: number, ty: number) => hOf(tx, ty) - (isWater(tx, ty) ? WATER_RECESS : 0);
 
@@ -459,7 +459,7 @@ export class Scene {
     cells.sort((a, b) => drawKey(a.tx, a.ty) - drawKey(b.tx, b.ty));
     for (const { tx, ty } of cells) {
       const out = Math.max(0, -tx, tx - (MAP_W - 1), -ty, ty - (MAP_H - 1));
-      const hh = bandHeight(ty);
+      const hh = bandHeight(tx, ty);
       const base = terrainColor(hh === 1 ? 'rock' : 'grass', hh);
       const patch = patchNoise(tx, ty, 5.5) * 0.62 + patchNoise(tx, ty, 2.1, 17) * 0.38;
       // `out` is a whole ring count, so a straight ramp fades in visible concentric steps.
@@ -467,7 +467,7 @@ export class Scene {
       const fade = Math.max(0, Math.min(1, 1 - (out + (patch - 0.5) * 2.2) / (M + 1)));
       const top = mix(HAZE, shade(base, 0.9 + patch * 0.19), fade);
       g.poly(flat(tileDiamond(tx, ty, hh))).fill({ color: top });
-      const lTo = bandHeight(ty + 1);
+      const lTo = bandHeight(tx, ty + 1);
       if (hh > lTo) {
         g.poly(
           flat([

@@ -357,11 +357,30 @@ Date: YYYY-MM-DD · Status: Accepted
   instrument hook + verifier check (`offsets 0.140..0.140`): a visual bug the owner could see and
   the suite could not is exactly the gap ADR 002 exists to close. 29 Vitest + verifier green.
   See `docs/work/2026-07-25-audit-fixes.md`.
-- **Open audit items (not yet fixed):** routeless rail docks still advertise as drop targets; the
-  wagon loads in fixed `ALL_RESOURCES` order so waiting logs starve everything behind them; the HUD
-  rewrites bank chips / letter / info-panel `innerHTML` every frame; status badges scale with zoom;
-  `RESOURCE_GLYPH` mixes an emoji with geometric glyphs; rail pricing (14 iron for a short route vs
-  a 10-iron unlock) wants a look in the balance pass.
+- **Audit batch two (2026-07-25, same branch).** Five items. The headline: a **routeless dock
+  stranded goods permanently** — it advertised as a drop target with no route, and `interact()` only
+  ever read a dock's `output`, so anything loaded was unrecoverable. Filed as a guidance nit; the
+  test showed it was the same class as the flume eating logs. Both halves fixed: a dock advertises
+  only once it has a route, **and** goods can always come back off a loading stage. Also: the wagon
+  **round-robins** cargo (`lastRes` on the wagon) instead of always scanning `ALL_RESOURCES` from
+  the top, so a refilled log pile can't monopolise a route; the HUD is content-keyed (bank chips,
+  letter and info panel were rewriting DOM 60×/s); **status badges hold a constant screen size**
+  (`1/zoom`, as the prompt already did — at 4× they were 64×48px); `RESOURCE_GLYPH`'s log is
+  geometric like the rest. See `docs/work/2026-07-25-audit-batch-two.md`.
+- **The terraces get a coastline (2026-07-25, same branch).** `bandHeight` keyed height purely off
+  the row, so every terrace boundary was a straight diagonal across the whole map — the last big
+  "sliced, not shaped" tell, and one no render work could fix. Now `bandHeight(tx, ty)`, with each
+  boundary offset by a bounded two-octave `bandEdgeShift(tx)` — the same deterministic sine trick
+  `riverColAt` uses, so no RNG and no seed to thread. **The invariant is tested, not asserted:**
+  ±`BAND_WOBBLE` (3) against an 11-row gap keeps the mid terrace ≥5 rows deep in every column, tested
+  ±8 columns beyond the map so the out-of-bounds fallback is covered too. Knock-ons: trees now plant
+  **by height, not row** (a wandering edge left bald patches south of every bulge), and the ore
+  cluster probes outward for a tile that really is mid terrace. Notably it broke two tests and a
+  verifier check that had hard-coded boundaries as fixed rows — all three now search for a real
+  terrace step instead, which tests the rule rather than the map.
+  See `docs/work/2026-07-25-band-wobble.md`.
+- **Open audit items (not yet fixed):** rail pricing (14 iron for a short route vs a 10-iron unlock)
+  wants a look in the balance pass.
 - **Deferred fast-follow:** true low-res pixel-upscale (integer zoom, literal plate crispness),
   sound/juice. Known sim nits reported in the 2026-07-23 session review (flume-without-trestles
   destroys logs; status.ts caps duplicated from constants; HUD rebuilds DOM every frame).
