@@ -2,12 +2,16 @@ import { describe, expect, it, beforeEach } from 'vitest';
 import { generateWorld, bandHeight, heightAt } from './world';
 import {
   CLAMP_OUT_CAP,
+  FURNACE_HEAT_DECAY_PER_S,
+  FURNACE_HEAT_PER_CHARCOAL,
   FURNACE_IRON_CAP,
   HEIGHT_BOTTOM,
   HEIGHT_MID,
   HEIGHT_TOP,
   MAP_H,
   MAP_W,
+  ORE_NODE_CAPACITY,
+  ORE_REGROW_MS,
 } from './constants';
 import { tickMachines, bankAllOutputs } from './machines';
 import { recomputeFlumePaths, tickFlume, tickIncline, tickFeeders } from './movers';
@@ -16,7 +20,7 @@ import { placementError } from './buildings';
 import { recomputeRailRoutes, tickRail } from './rail';
 import { allUnlocksFor } from './progression';
 import { buildingStatus, isDropTargetKind, promptFor } from './status';
-import type { Building, BuildingKind, GameState } from './types';
+import type { Building, BuildingKind, GameState, ResourceKind } from './types';
 
 function drive(fn: (dt: number) => void, seconds: number, stepMs = 100): void {
   const steps = Math.round((seconds * 1000) / stepMs);
@@ -79,11 +83,11 @@ describe('sawmill power gating', () => {
     const g = makeInitialState(1);
     const mill = mkBuilding({ kind: 'sawmill', tx: 5, ty: 5, input: { log: 4 } });
     g.buildings.push(mill);
-    drive((dt) => tickMachines(g, dt), 5);
+    drive((dt) => tickMachines(g, dt), 15);
     expect(mill.output.plank ?? 0).toBe(0); // unpowered
 
     g.buildings.push(mkBuilding({ kind: 'waterwheel', tx: 6, ty: 5 }));
-    drive((dt) => tickMachines(g, dt), 5);
+    drive((dt) => tickMachines(g, dt), 15);
     expect(mill.output.plank ?? 0).toBeGreaterThan(0); // powered -> planks
   });
 });
@@ -173,14 +177,14 @@ describe('progression', () => {
     expect(g.activeLetterId).toBe(g.letters[1].id);
   });
 
-  it('wins when 10 iron is delivered to the blacksmith', () => {
+  it('wins when the blacksmith has its iron', () => {
     const g = getGame();
     // fast-forward the plank letters
-    g.bank.plank = 40;
+    g.bank.plank = 100;
     checkLetters(g);
     checkLetters(g);
     checkLetters(g);
-    g.buildings.push(mkBuilding({ kind: 'blacksmith', tx: 5, ty: 28, delivered: 10 }));
+    g.buildings.push(mkBuilding({ kind: 'blacksmith', tx: 5, ty: 28, delivered: 25 }));
     checkLetters(g);
     expect(g.won).toBe(true);
   });
@@ -195,7 +199,7 @@ describe('player verbs', () => {
     g.player.x = tree.tx + 0.5;
     g.player.y = tree.ty + 0.5;
     actions.interact(); // begin chop
-    for (let i = 0; i < 20; i++) actions.updateAction(100);
+    for (let i = 0; i < 30; i++) actions.updateAction(100);
     expect(g.player.carry).toBe('log');
     expect(g.player.carryCount).toBeGreaterThan(0);
 
@@ -204,7 +208,7 @@ describe('player verbs', () => {
     expect(actions.place('stockpile', 7, 25)).toBeNull();
     const saw = g.buildings.find((b) => b.kind === 'pitsaw')!;
     saw.input.log = 3;
-    for (let i = 0; i < 140; i++) actions.simStep(100);
+    for (let i = 0; i < 200; i++) actions.simStep(100);
     expect(g.bank.plank).toBeGreaterThan(0); // pit saw (unpowered) produced + banked planks
   });
 
@@ -275,7 +279,7 @@ describe('completable valley (seed 1)', () => {
 
     const beforePlank = g.bank.plank;
     find(g, mill.tx, mill.ty).input.log = 6;
-    for (let i = 0; i < 140; i++) actions.simStep(100);
+    for (let i = 0; i < 300; i++) actions.simStep(100);
     expect(g.bank.plank).toBeGreaterThan(beforePlank); // powered sawmill banked planks
 
     // Automated furnace: incline (ore) + clamp (charcoal) feeding one furnace.
@@ -289,9 +293,9 @@ describe('completable valley (seed 1)', () => {
     expect(clamp, 'a clamp fits beside the furnace').toBeTruthy();
     expect(actions.place('clamp', clamp.tx, clamp.ty)).toBeNull();
 
-    find(g, inc.tx, inc.ty).input.ore = 12;
-    find(g, clamp.tx, clamp.ty).input.log = 8;
-    for (let i = 0; i < 450; i++) actions.simStep(100);
+    find(g, inc.tx, inc.ty).input.ore = 20;
+    find(g, clamp.tx, clamp.ty).input.log = 12;
+    for (let i = 0; i < 1200; i++) actions.simStep(100);
     expect(find(g, furn.tx, furn.ty).output.iron ?? 0).toBeGreaterThan(0); // iron smelted on the real map
   });
 });
@@ -565,5 +569,66 @@ describe('audit batch two', () => {
     }
     expect(carried).toContain('iron');
     expect(b.output.iron ?? 0).toBeGreaterThan(0);
+  });
+});
+
+describe('balance ratios (the design intent, in numbers)', () => {
+  // Measured the same way scripts/model-economy.ts does. These lock the *ratios* the balance
+  // pass was designed around, so tuning a constant that breaks one surfaces here rather than in
+  // a playtest three sessions later.
+  function ratePerMin(kind: BuildingKind, out: ResourceKind, seconds = 300): { made: number; used: Record<string, number> } {
+    const g = makeInitialState(1);
+    const m = mkBuilding({ kind, tx: 5, ty: 25, heat: 100, cold: false, fuelTimer: 0, relighting: 0 });
+    g.buildings.push(m);
+    if (kind === 'sawmill') g.buildings.push(mkBuilding({ kind: 'waterwheel', tx: 6, ty: 25 }));
+    const inputs: ResourceKind[] = kind === 'furnace' ? ['ore', 'charcoal'] : ['log'];
+    const STOCK = 999;
+    const used: Record<string, number> = {};
+    let made = 0;
+    for (const r of inputs) m.input[r] = STOCK;
+    for (let t = 0; t < (seconds * 1000) / 100; t++) {
+      tickMachines(g, 100);
+      for (const r of inputs) {
+        const have = m.input[r] ?? 0;
+        if (have < STOCK) {
+          used[r] = (used[r] ?? 0) + (STOCK - have);
+          m.input[r] = STOCK;
+        }
+      }
+      made += m.output[out] ?? 0;
+      m.output[out] = 0;
+    }
+    const mins = seconds / 60;
+    for (const k of Object.keys(used)) used[k] /= mins;
+    return { made: made / mins, used };
+  }
+
+  it('a powered sawmill is about 4x the pit saw', () => {
+    const saw = ratePerMin('sawmill', 'plank');
+    const pit = ratePerMin('pitsaw', 'plank');
+    expect(saw.made / pit.made).toBeGreaterThanOrEqual(3.5);
+    expect(saw.made / pit.made).toBeLessThanOrEqual(4.5);
+  });
+
+  it('one clamp feeds one furnace, with headroom', () => {
+    const clamp = ratePerMin('clamp', 'charcoal');
+    const furn = ratePerMin('furnace', 'iron');
+    const clampsNeeded = (furn.used.charcoal ?? 0) / clamp.made;
+    expect(clampsNeeded).toBeLessThan(1); // one clamp is enough
+    expect(clampsNeeded).toBeGreaterThan(0.4); // ...but not trivially so
+  });
+
+  it('the furnace does not waste charcoal topping up a nearly-full heat bar', () => {
+    const furn = ratePerMin('furnace', 'iron');
+    // with no waste, burn rate is decay / heat-per-charcoal
+    const ideal = (FURNACE_HEAT_DECAY_PER_S * 60) / FURNACE_HEAT_PER_CHARCOAL;
+    expect(furn.used.charcoal ?? 0).toBeLessThan(ideal * 1.15);
+  });
+
+  it('the ore field can sustain more than one furnace, so ore is logistics not mining rate', () => {
+    const furn = ratePerMin('furnace', 'iron');
+    const w = generateWorld(1);
+    const ceiling = ((w.ores.length * ORE_NODE_CAPACITY) / ORE_REGROW_MS) * 60000;
+    expect(ceiling / (furn.used.ore ?? 1)).toBeGreaterThan(2);
   });
 });

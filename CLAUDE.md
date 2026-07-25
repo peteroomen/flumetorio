@@ -379,8 +379,27 @@ Date: YYYY-MM-DD · Status: Accepted
   verifier check that had hard-coded boundaries as fixed rows — all three now search for a real
   terrace step instead, which tests the rule rather than the map.
   See `docs/work/2026-07-25-band-wobble.md`.
-- **Open audit items (not yet fixed):** rail pricing (14 iron for a short route vs a 10-iron unlock)
-  wants a look in the balance pass.
+- **Balance pass (2026-07-25, same branch).** New `scripts/model-economy.ts` drives the real machine
+  ticks headlessly and reports rates, chain ratios, coast-to-cold, ore sustain and letter cost in
+  machine-minutes — rerun it after any constant moves. It found that **nothing was paced by
+  machines** (every letter was under a minute of machine time; the 10-iron win was 26 seconds of
+  furnace), that the **furnace threw away ~85% of its charcoal** (auto-stoke burned a whole charcoal
+  to recover the ~5 heat lost since the last check), that **ore was 43% of the player's time forever**,
+  and that **`FURNACE_ORE_CAP` was dead** (`inputCap` returned `ORE_PER_CYCLE*6`, so tuning it did
+  nothing — same drift class as the caps `status.ts` used to re-type). Owner chose: machines pace the
+  arc · fix the charcoal waste but keep a deliberate drain · ore becomes logistics. Result: sawmill
+  20 plank/min (exactly 4× the pit saw), clamp 8 charcoal/min against a furnace burning 5.6 (0.7
+  clamps per furnace), furnace 5 iron/min, ore field sustains 6.5 furnaces so the player mines 7% of
+  the time. Letters are 8/40/80 planks + 25 iron; buildings cost 0.5–2.0 machine-minutes. Coast-to-cold
+  (18.7s to stop smelting, 31.2s to cold) was already right and is untouched. Rail sequencing resolves
+  itself — the unlock now asks 25 iron against a ~14-iron starter route. **Four ratio guard tests**
+  lock the design rather than the constants. 38 Vitest + verifier green.
+  See `docs/work/2026-07-25-balance-pass.md`.
+- **Note:** letters check the *current bank*, and the bank is also the build currency — buying a
+  sawmill sets you back on the plank letter. Requirements are sized with that in mind.
+- **Next:** a live playtest of minutes 20–40 with a written verdict (the GDD fun-gate). The balance
+  numbers above are modelled, not felt; walking and hauling time is the other half of the pacing and
+  can only be judged in play.
 - **Deferred fast-follow:** true low-res pixel-upscale (integer zoom, literal plate crispness),
   sound/juice. Known sim nits reported in the 2026-07-23 session review (flume-without-trestles
   destroys logs; status.ts caps duplicated from constants; HUD rebuilds DOM every frame).

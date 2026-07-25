@@ -18,49 +18,51 @@ export const HEIGHT_BOTTOM = 0;
 // Player.
 export const PLAYER_BASE_SPEED = 4.2; // tiles / second, unladen
 export const PLAYER_LADEN_SPEED = 2.4; // tiles / second, full barrow
-export const BARROW_CAPACITY = 6; // items the player can carry at once
+export const BARROW_CAPACITY = 12; // items the player can carry at once
 export const REACH = 1.35; // interaction reach in tiles
-export const CHOP_MS = 1300; // time to fell a tree
-export const MINE_MS = 1600; // time to knock ore off the outcrop
-export const ORE_REGROW_MS = 60_000; // an exhausted outcrop face recovers
+export const CHOP_MS = 2200; // time to fell a tree
+export const MINE_MS = 2400; // time to knock ore off the outcrop
+export const ORE_REGROW_MS = 150_000; // an exhausted outcrop face recovers
 
 // Pit saw: the free, unpowered, SLOW manual tier (GDD §5 power rule). 1 log -> 1 plank.
 // Deliberately ~4x slower throughput than a powered sawmill (slower cycle AND half the yield),
 // so one sawmill beats a yard of pit saws.
-export const PITSAW_CYCLE_MS = 3200;
+export const PITSAW_CYCLE_MS = 12_000;
 export const PITSAW_LOG_PER_CYCLE = 1;
 export const PITSAW_PLANK_PER_CYCLE = 1;
-export const PITSAW_IN_CAP = 4;
-export const PITSAW_OUT_CAP = 4;
+export const PITSAW_IN_CAP = 8;
+export const PITSAW_OUT_CAP = 8;
 
 // Yields.
-export const TREE_LOG_YIELD = 4;
-export const ORE_NODE_YIELD = 3;
+export const TREE_LOG_YIELD = 6;
+export const ORE_NODE_YIELD = 6;
+// How much a single outcrop face holds before it needs to recover (3 swings).
+export const ORE_NODE_CAPACITY = 18;
 
 // Power.
 export const WATERWHEEL_POWER_RADIUS = 4.5; // tiles a wheel energizes (implicit line shaft)
 
 // Machine timings (ms per cycle) and ratios.
-export const SAWMILL_CYCLE_MS = 1500; // 1 log -> 2 planks
+export const SAWMILL_CYCLE_MS = 6000; // 1 log -> 2 planks
 export const SAWMILL_LOG_PER_CYCLE = 1;
 export const SAWMILL_PLANK_PER_CYCLE = 2;
-export const SAWMILL_IN_CAP = 8;
-export const SAWMILL_OUT_CAP = 12;
+export const SAWMILL_IN_CAP = 24;
+export const SAWMILL_OUT_CAP = 40;
 
-export const CLAMP_CYCLE_MS = 4000; // 2 logs -> 2 charcoal (slow, no power needed)
+export const CLAMP_CYCLE_MS = 15_000; // 2 logs -> 2 charcoal (slow, no power needed)
 export const CLAMP_LOG_PER_CYCLE = 2;
 export const CLAMP_CHARCOAL_PER_CYCLE = 2;
-export const CLAMP_IN_CAP = 8;
-export const CLAMP_OUT_CAP = 8;
+export const CLAMP_IN_CAP = 24;
+export const CLAMP_OUT_CAP = 24;
 
 // Furnace: batch smelter with a heat bar that decays. Going cold is expensive.
-export const FURNACE_CYCLE_MS = 2600; // 2 ore + 1 charcoal -> 1 iron
+export const FURNACE_CYCLE_MS = 12_000; // 2 ore -> 1 iron (charcoal is fuel, not a reagent)
 export const FURNACE_ORE_PER_CYCLE = 2;
 export const FURNACE_CHARCOAL_PER_CYCLE = 1;
 export const FURNACE_IRON_PER_CYCLE = 1;
-export const FURNACE_ORE_CAP = 12;
-export const FURNACE_CHARCOAL_CAP = 10;
-export const FURNACE_IRON_CAP = 20;
+export const FURNACE_ORE_CAP = 40;
+export const FURNACE_CHARCOAL_CAP = 24;
+export const FURNACE_IRON_CAP = 40;
 export const FURNACE_MAX_HEAT = 100;
 export const FURNACE_HEAT_PER_CHARCOAL = 34; // stoking adds heat
 export const FURNACE_FUEL_BURN_MS = 1600; // cadence at which a charcoal is burned for heat
@@ -73,19 +75,19 @@ export const FURNACE_RELIGHT_MS = 3500; // penalty time when cold
 export const FLUME_SPEED = 2.6; // tiles / second along the path
 
 // Incline: self-acting gravity cart. Moves items top->bottom.
-export const INCLINE_INTERVAL_MS = 1400; // one cart trip cadence
-export const INCLINE_CART_CAP = 3; // items per trip
-export const INCLINE_BUFFER_CAP = 12;
+export const INCLINE_INTERVAL_MS = 2600; // one cart trip cadence
+export const INCLINE_CART_CAP = 6; // items per trip
+export const INCLINE_BUFFER_CAP = 40;
 
 // Rail: a horse-drawn plateway. Level ground only — a loaded wagon cannot climb, and that
 // refusal is the whole point (see docs/design/rail-pitch.md). One wagon per route.
 export const RAIL_SPEED = 1.9; // tiles / second — a horse walks, it does not race
-export const WAGON_CAPACITY = 8; // one lot per wagon
+export const WAGON_CAPACITY = 16; // one lot per wagon
 export const WAGON_DWELL_MS = 900; // pause at each end to load / unload
-export const RAIL_DOCK_CAP = 16; // per-resource buffer at each end
+export const RAIL_DOCK_CAP = 40; // per-resource buffer at each end
 
 // Forestry — replant.
-export const SAPLING_GROW_MS = 45_000; // a stump regrows into a fellable tree
+export const SAPLING_GROW_MS = 90_000; // a stump regrows into a fellable tree
 
 export const SAVE_KEY = 'flumetorio-save-v1';
 export const SAVE_VERSION = 1;

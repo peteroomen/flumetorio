@@ -50,18 +50,28 @@ function produced(kind: BuildingKind, out: ResourceKind, mins = 5): { made: numb
   let made = 0;
   const used: Record<string, number> = {};
   const inputs: ResourceKind[] = kind === 'furnace' ? ['ore', 'charcoal'] : ['log'];
-  run(g, mins * 60, () => {
+  // Measure by DIFF after each tick, then refill — counting the refill amount instead double-
+  // counted whatever the tick had not yet consumed.
+  const STOCK = 999;
+  for (const res of inputs) m.input[res] = STOCK;
+  run(g, mins * 60, undefined);
+  // (the loop below re-runs with per-tick accounting; `run` above only warms the machine up)
+  for (const res of inputs) m.input[res] = STOCK;
+  m.output[out] = 0;
+  for (let t = 0; t < (mins * 60 * 1000) / STEP; t++) {
+    tickMachines(g, STEP);
+    tickIncline(g, STEP);
+    tickFeeders(g);
     for (const res of inputs) {
-      const cap = kind === 'furnace' && res === 'ore' ? 12 : kind === 'furnace' ? C.FURNACE_CHARCOAL_CAP : 8;
       const have = m.input[res] ?? 0;
-      if (have < cap) {
-        used[res] = (used[res] ?? 0) + (cap - have);
-        m.input[res] = cap;
+      if (have < STOCK) {
+        used[res] = (used[res] ?? 0) + (STOCK - have);
+        m.input[res] = STOCK;
       }
     }
     made += m.output[out] ?? 0;
     m.output[out] = 0;
-  });
+  }
   for (const k of Object.keys(used)) used[k] /= mins;
   return { made: made / mins, used };
 }
@@ -121,9 +131,9 @@ rule('ORE FIELD: can the outcrop sustain a furnace?');
 {
   const w = generateWorld(1);
   const nodes = w.ores.length;
-  const stock = nodes * 6;
+  const stock = nodes * C.ORE_NODE_CAPACITY;
   const regenPerMin = (stock / C.ORE_REGROW_MS) * 60000;
-  say(`outcrop: ${nodes} nodes x 6 ore = ${stock} ore, each face regrows after ${(C.ORE_REGROW_MS / 1000).toFixed(0)}s`);
+  say(`outcrop: ${nodes} nodes x ${C.ORE_NODE_CAPACITY} ore = ${stock} ore, each face regrows after ${(C.ORE_REGROW_MS / 1000).toFixed(0)}s`);
   say(`=> sustained ceiling ${fmt(regenPerMin)} ore/min, against one furnace wanting ${fmt(furn.used.ore ?? 0)} ore/min`);
   say(`=> the field supports ${fmt(regenPerMin / (furn.used.ore ?? 1), 1)} furnace(s) at full tilt`);
 }

@@ -8,6 +8,7 @@ import {
   HEIGHT_TOP,
   MAP_H,
   MAP_W,
+  ORE_NODE_CAPACITY,
 } from './constants';
 import { makeRng, rngChance, type Rng } from './rng';
 import type { OreNode, Tile, TreeNode } from './types';
@@ -127,7 +128,7 @@ export function generateWorld(seed: number): World {
       if (bandHeight(tx, ty) !== HEIGHT_MID) continue;
       const dist = Math.abs(dx) + Math.abs(dy);
       if (dist <= 2 && rngChance(rng, 0.7)) {
-        ores.push({ id: id++, tx, ty, remaining: 6, regrowAtMs: 0 });
+        ores.push({ id: id++, tx, ty, remaining: ORE_NODE_CAPACITY, regrowAtMs: 0 });
       }
     }
   }
