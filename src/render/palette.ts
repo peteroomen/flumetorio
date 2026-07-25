@@ -1,7 +1,7 @@
 // Locked palette — Plate III · Rev C ("soot & steam"). The hex ramps come verbatim from the
 // published art-direction artifact; change them there first, then here.
 
-import type { BuildingKind, ResourceKind, Terrain } from '@/lib/sim/types';
+import type { ResourceKind, Terrain } from '@/lib/sim/types';
 
 export const COLORS = {
   bg: 0x14141d,
@@ -19,9 +19,12 @@ export const COLORS = {
   rockT: 0x726c62,
   rockD: 0x453f38,
 
-  water0: 0x357089,
-  water1: 0x4f97b2,
-  water2: 0x74bcd6,
+  // Desaturated off the plate's originals: at full chroma the river was the most saturated thing
+  // on screen and out-pulled the furnace glow, which is meant to be the eye's destination.
+  water0: 0x2f5f72,
+  water1: 0x497f93,
+  water2: 0x74a8b8,
+  foam: 0xcfe0e6,
 
   iron: 0x4a4b56,
   ironL: 0x66677a,
@@ -33,6 +36,11 @@ export const COLORS = {
   copper: 0xb06a3a,
   copperL: 0xd08a54,
   verd: 0x4a9c80,
+  verdL: 0x6cbc9e,
+  verdD: 0x2f6b57,
+  slate: 0x4d525e,
+  slateL: 0x646a78,
+  slateD: 0x343842,
   stone: 0x726c62,
   stoneL: 0x8a8375,
   stoneD: 0x4a453d,
@@ -124,6 +132,27 @@ export function shade(color: number, f: number): number {
 
 export const darken = shade;
 
+// Blend two colours; f=0 is `a`, f=1 is `b`.
+export function mix(a: number, b: number, f: number): number {
+  const g = 1 - f;
+  const r = ((a >> 16) & 0xff) * g + ((b >> 16) & 0xff) * f;
+  const gr = ((a >> 8) & 0xff) * g + ((b >> 8) & 0xff) * f;
+  const bl = (a & 0xff) * g + (b & 0xff) * f;
+  return (Math.round(r) << 16) | (Math.round(gr) << 8) | Math.round(bl);
+}
+
+// What distance fades toward. Sits between the two sky stops so the terrain skirt can dissolve
+// into the backdrop without a seam.
+export const HAZE = 0x2b2a3a;
+
+// ---- material identity ----
+// The kit reads materials, not arbitrary tints, so new buildings inherit the vocabulary:
+//   brass     — power transmission (cogs, shafts, drums, chimney lips)
+//   verdigris — weathered copper on anything permanently wet (wheel fittings, head-gate)
+//   brick     — anything that holds fire (smithy, furnace base, chimneys)
+//   slate     — roofs
+//   timber    — structure
+
 export const RESOURCE_COLORS: Record<ResourceKind, number> = {
   log: 0x9c6b3b,
   plank: 0xcaa15e,
@@ -140,15 +169,5 @@ export const RESOURCE_GLYPH: Record<ResourceKind, string> = {
   iron: '⬢',
 };
 
-export const BUILDING_COLORS: Record<BuildingKind, number> = {
-  stockpile: 0x6b5636,
-  pitsaw: 0x7d5430,
-  waterwheel: 0x5a3d24,
-  sawmill: 0x7d5430,
-  flume: 0x7d5430,
-  flumeHead: 0x4f97b2,
-  clamp: 0x5a4a34,
-  incline: 0x6a5a4a,
-  furnace: 0x4a4b56,
-  blacksmith: 0x726c62,
-};
+// (No per-kind building colour table: buildings are composed from the kit out of the materials
+// above, so a flat colour per kind would be a second, silently-diverging source of truth.)

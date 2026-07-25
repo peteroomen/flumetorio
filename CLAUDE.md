@@ -280,13 +280,26 @@ Date: YYYY-MM-DD · Status: Accepted
   hexagon, one polygon so alpha can't double-darken) and `blobShadow` for every caster — buildings,
   flora, ore, player, ground items — plus trestle posts under the line shaft. Render-only. 19 Vitest
   + verifier green. See `docs/work/2026-07-25-ground-flora-light.md`.
+- **Material identity + air (2026-07-25, same branch, second bundle).** (4) A **material vocabulary**
+  the kit reads instead of per-kind tints — brass = power transmission, verdigris = weathered copper
+  on anything permanently wet, brick = anything that holds fire, slate = roofs, timber = structure.
+  So: brick smithy under a verdigris roof (the works' one strong hue break), brick hearth course
+  under the furnace's iron stack, verdigris bearing plate on the waterwheel, verdigris-bound flume
+  head-gate, slate on the sawmill. `BUILDING_COLORS` deleted — a flat colour per kind beside a
+  material vocabulary is a second, silently-diverging source of truth. (5) Water desaturated: at full
+  chroma the river out-pulled the furnace glow, which is meant to be the eye's destination. (6)
+  Aerial perspective as one screen-space haze gradient (the camera is player-centred, so screen
+  height *is* distance — no per-tile fog threaded through the kit), plus an **out-of-bounds terrain
+  skirt** so the valley recedes into haze instead of ending on a hard diagonal. (8) Waterfall foam is
+  a filled mass, not a bare ring that read as a stray debug circle. (9) Terrace-base AO — cliffs sit
+  in a pool of their own shade, so the elevation spine reads as real drops. Render-only. 19 Vitest +
+  verifier green. See `docs/work/2026-07-25-materials-and-air.md`.
 - **Deferred fast-follow:** true low-res pixel-upscale (integer zoom, literal plate crispness),
   sound/juice. Known sim nits reported in the 2026-07-23 session review (flume-without-trestles
   destroys logs; status.ts caps duplicated from constants; HUD rebuilds DOM every frame).
-  Open visual items from the same review: per-building-family material identity (verdigris/copper/
-  brick are defined but unused), water desaturation, atmospheric depth + the sky-wedge corner,
-  status badges scaling with zoom, waterfall foam, terrace-base AO, world-gen band wobble (the
-  terraces are still perfectly straight diagonals — `bandHeight` keys purely off the row), and the
+  Open visual items: **status badges scale with zoom** (now the loudest thing in frame at close
+  zoom), **world-gen band wobble** (the terraces are still perfectly straight diagonals — `bandHeight`
+  keys purely off the row; it's sim, not render, so it wants its own branch with tests), and the
   emoji/glyph mismatch in `RESOURCE_GLYPH`.
 - **Next:** balance/feel pass after live play (constants in `src/lib/sim/constants.ts`), the pixel
   fast-follow, then post-MVP arcs (demand-pull town, steam, rail, aqueducts) per `docs/ROADMAP.md`.
