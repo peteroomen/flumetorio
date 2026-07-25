@@ -81,7 +81,9 @@ function dist(px: number, py: number, tx: number, ty: number): number {
 
 // Is building `b` a valid place to deposit resource `res`? (kind-level, ignoring distance)
 export function isDropTargetKind(b: Building, res: ResourceKind): boolean {
-  if (b.kind === 'railDock') return true; // a terminus takes anything
+  // A terminus takes anything — but only advertise one that can actually move it. A routeless
+  // dock invited loads it could never carry away.
+  if (b.kind === 'railDock') return b.routeMateId !== undefined;
   switch (res) {
     case 'iron':
       return b.kind === 'blacksmith' || b.kind === 'stockpile';

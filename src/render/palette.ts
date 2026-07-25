@@ -161,8 +161,9 @@ export const RESOURCE_COLORS: Record<ResourceKind, number> = {
   iron: 0xb9c2cc,
 };
 
+// Geometric throughout — an emoji here rendered in its own colour palette beside the others.
 export const RESOURCE_GLYPH: Record<ResourceKind, string> = {
-  log: '🪵',
+  log: '▬',
   plank: '▤',
   ore: '◆',
   charcoal: '◼',

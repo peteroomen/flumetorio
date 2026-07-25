@@ -466,3 +466,57 @@ describe('audit fixes', () => {
     expect(buildingStatus(g, furnace)?.key).toBe('outputFull');
   });
 });
+
+describe('audit batch two', () => {
+  function route(g: GameState): { a: Building; b: Building } {
+    const a = mkBuilding({ kind: 'railDock', tx: 5, ty: 26, id: 1 });
+    const b = mkBuilding({ kind: 'railDock', tx: 9, ty: 26, id: 2 });
+    g.buildings.push(a, b);
+    for (const tx of [6, 7, 8]) g.buildings.push(mkBuilding({ kind: 'rail', tx, ty: 26, id: 100 + tx }));
+    recomputeRailRoutes(g);
+    return { a, b };
+  }
+
+  it('only advertises a dock that can actually carry goods away', () => {
+    const g = makeInitialState(1);
+    const lone = mkBuilding({ kind: 'railDock', tx: 5, ty: 26, id: 1 });
+    g.buildings.push(lone);
+    recomputeRailRoutes(g);
+    expect(isDropTargetKind(lone, 'ore')).toBe(false);
+    const { a } = route(makeInitialState(1));
+    expect(isDropTargetKind(a, 'ore')).toBe(true);
+  });
+
+  it('never strands goods on a dock — they can be taken back off the stage', () => {
+    const g = makeInitialState(1);
+    const lone = mkBuilding({ kind: 'railDock', tx: 5, ty: 26, id: 1, input: { ore: 3 } });
+    g.buildings.push(lone);
+    actions.load(g);
+    const p = getGame().player;
+    p.x = 5.5;
+    p.y = 26.5;
+    p.carry = null;
+    p.carryCount = 0;
+    actions.interact();
+    expect(getGame().player.carry).toBe('ore');
+    expect(getGame().player.carryCount).toBe(3);
+    expect(getGame().buildings[0].input.ore ?? 0).toBe(0);
+  });
+
+  it('round-robins cargo so one resource cannot monopolise the route', () => {
+    const g = makeInitialState(1);
+    const { a, b } = route(g);
+    // logs keep arriving; iron is waiting behind them
+    a.input.log = 8;
+    a.input.iron = 4;
+    const carried: string[] = [];
+    for (let i = 0; i < 900; i++) {
+      tickRail(g, 100);
+      const c = a.wagon?.cargo;
+      if (c && carried[carried.length - 1] !== c) carried.push(c);
+      if ((a.input.log ?? 0) < 8) a.input.log = 8; // refill logs every tick
+    }
+    expect(carried).toContain('iron');
+    expect(b.output.iron ?? 0).toBeGreaterThan(0);
+  });
+});

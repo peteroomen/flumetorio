@@ -81,6 +81,7 @@ export interface Wagon {
   cargo: ResourceKind | null;
   count: number;
   dwell: number; // ms remaining loading/unloading at an end
+  lastRes?: ResourceKind; // what went last, so loading round-robins instead of starving
 }
 
 // Items riding a flume (in transit).

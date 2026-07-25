@@ -90,12 +90,16 @@ function serviceEnd(w: Wagon, dock: Building): void {
     }
   }
   if (w.cargo === null) {
-    for (const res of ALL_RESOURCES) {
-      const have = count(dock.input, res);
-      if (have <= 0) continue;
-      const got = take(dock.input, res, WAGON_CAPACITY);
+    // Round-robin from whatever went last, rather than always scanning ALL_RESOURCES from the
+    // top: a continuously-refilled pile of logs used to monopolise the route and the iron behind
+    // it never moved.
+    const start = w.lastRes ? ALL_RESOURCES.indexOf(w.lastRes) + 1 : 0;
+    for (let k = 0; k < ALL_RESOURCES.length; k++) {
+      const res = ALL_RESOURCES[(start + k) % ALL_RESOURCES.length];
+      if (count(dock.input, res) <= 0) continue;
+      w.count = take(dock.input, res, WAGON_CAPACITY);
       w.cargo = res as ResourceKind;
-      w.count = got;
+      w.lastRes = res as ResourceKind;
       break;
     }
   }

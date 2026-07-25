@@ -1528,21 +1528,24 @@ export class Scene {
       }
     }
 
-    // 3) machine status badges — attention states flash and show WHAT they want
+    // 3) machine status badges — attention states flash and show WHAT they want.
+    // `k` holds them at a constant SCREEN size: they live in the zoomed world container, so at 4x
+    // they were 64x48px and the loudest thing in frame.
+    const k = 1 / Math.max(1, view.zoom);
     for (const b of state.buildings) {
       const st = buildingStatus(state, b);
       if (!st) continue;
       const c = anchor(b);
       const col = STATUS_COLOR[st.key];
       if (st.key === 'running') {
-        g.circle(c.x + 10, c.y + 2, 2).fill({ color: col, alpha: 0.85 });
+        g.circle(c.x + 10 * k, c.y + 2 * k, 2 * k).fill({ color: col, alpha: 0.85 });
         continue;
       }
-      this.drawBadge(g, c.x, c.y, st.key, col, pulse);
+      this.drawBadge(g, c.x, c.y, st.key, col, pulse, k);
       if (st.want) {
-        g.rect(c.x + 9, c.y - 5, 6, 6)
+        g.rect(c.x + 9 * k, c.y - 5 * k, 6 * k, 6 * k)
           .fill({ color: RESOURCE_COLORS[st.want], alpha: 0.5 + 0.5 * pulse })
-          .stroke({ width: 1, color: 0x000000, alpha: 0.4 });
+          .stroke({ width: k, color: 0x000000, alpha: 0.4 });
       }
     }
 
@@ -1552,8 +1555,8 @@ export class Scene {
       for (const b of state.buildings) {
         if (b.kind !== 'blacksmith') continue;
         const c = anchor(b, 0.75);
-        g.rect(c.x - 3, c.y - 12, 6, 6).fill({ color: RESOURCE_COLORS.iron });
-        g.poly([c.x - 5, c.y - 4, c.x + 5, c.y - 4, c.x, c.y + 2]).fill({ color: 0xffb347, alpha: 0.4 + 0.6 * pulse });
+        g.rect(c.x - 3 * k, c.y - 12 * k, 6 * k, 6 * k).fill({ color: RESOURCE_COLORS.iron });
+        g.poly([c.x - 5 * k, c.y - 4 * k, c.x + 5 * k, c.y - 4 * k, c.x, c.y + 2 * k]).fill({ color: 0xffb347, alpha: 0.4 + 0.6 * pulse });
       }
     }
 
@@ -1588,31 +1591,34 @@ export class Scene {
     }
   }
 
-  private drawBadge(g: Graphics, x: number, y: number, key: StatusKey, col: number, pulse = 1): void {
+  // `k` scales every dimension so the badge holds a constant screen size inside the zoomed world.
+  private drawBadge(g: Graphics, x: number, y: number, key: StatusKey, col: number, pulse = 1, k = 1): void {
     const a = 0.45 + 0.55 * pulse; // attention badges flash
-    g.roundRect(x - 8, y - 6, 16, 12, 3).fill({ color: 0x11151c, alpha: 0.92 }).stroke({ width: 1, color: col, alpha: a });
+    g.roundRect(x - 8 * k, y - 6 * k, 16 * k, 12 * k, 3 * k)
+      .fill({ color: 0x11151c, alpha: 0.92 })
+      .stroke({ width: k, color: col, alpha: a });
     const cx = x;
     const cy = y;
     switch (key) {
       case 'noPower':
-        g.moveTo(cx - 4, cy - 3).lineTo(cx + 4, cy + 3).stroke({ width: 1.4, color: col, alpha: a });
-        g.poly([cx - 1, cy - 3, cx - 3, cy, cx, cy, cx - 2, cy + 3]).stroke({ width: 1, color: col, alpha: a });
+        g.moveTo(cx - 4 * k, cy - 3 * k).lineTo(cx + 4 * k, cy + 3 * k).stroke({ width: 1.4 * k, color: col, alpha: a });
+        g.poly([cx - k, cy - 3 * k, cx - 3 * k, cy, cx, cy, cx - 2 * k, cy + 3 * k]).stroke({ width: k, color: col, alpha: a });
         break;
       case 'needsFuel':
         // a flickering flame — the Factorio "out of fuel" alert
-        g.poly([cx, cy - 4, cx + 3, cy + 1, cx + 1.5, cy + 3, cx - 1.5, cy + 3, cx - 3, cy + 1]).fill({ color: col, alpha: a });
-        g.circle(cx, cy + 1, 1).fill({ color: 0xffe08a, alpha: a });
+        g.poly([cx, cy - 4 * k, cx + 3 * k, cy + k, cx + 1.5 * k, cy + 3 * k, cx - 1.5 * k, cy + 3 * k, cx - 3 * k, cy + k]).fill({ color: col, alpha: a });
+        g.circle(cx, cy + k, k).fill({ color: 0xffe08a, alpha: a });
         break;
       case 'needsInput':
-        g.poly([cx - 3, cy - 3, cx + 3, cy - 3, cx, cy + 3]).fill({ color: col, alpha: a });
+        g.poly([cx - 3 * k, cy - 3 * k, cx + 3 * k, cy - 3 * k, cx, cy + 3 * k]).fill({ color: col, alpha: a });
         break;
       case 'outputFull':
-        g.poly([cx - 3, cy + 3, cx + 3, cy + 3, cx, cy - 3]).fill({ color: col, alpha: a });
+        g.poly([cx - 3 * k, cy + 3 * k, cx + 3 * k, cy + 3 * k, cx, cy - 3 * k]).fill({ color: col, alpha: a });
         break;
       case 'cold':
-        g.circle(cx, cy, 2.4).fill({ color: col, alpha: a });
-        g.moveTo(cx - 4, cy).lineTo(cx + 4, cy).stroke({ width: 1, color: col, alpha: a });
-        g.moveTo(cx, cy - 4).lineTo(cx, cy + 4).stroke({ width: 1, color: col, alpha: a });
+        g.circle(cx, cy, 2.4 * k).fill({ color: col, alpha: a });
+        g.moveTo(cx - 4 * k, cy).lineTo(cx + 4 * k, cy).stroke({ width: k, color: col, alpha: a });
+        g.moveTo(cx, cy - 4 * k).lineTo(cx, cy + 4 * k).stroke({ width: k, color: col, alpha: a });
         break;
       default:
         break;

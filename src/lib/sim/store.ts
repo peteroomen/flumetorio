@@ -225,17 +225,21 @@ export const actions = {
       bump();
       return;
     }
-    // 3) collect from a loading dock — a dock holds whatever the wagon brought, not one fixed kind
+    // 3) collect from a loading dock — a dock holds whatever the wagon brought, not one fixed
+    // kind. `output` (arrived) first, then `input` (loaded but not yet gone), so goods can always
+    // come back off a loading stage — otherwise a dock that never gets a route strands them.
     for (const b of g.buildings) {
       if (b.kind !== 'railDock') continue;
       if (centerDist(p.x, p.y, b.tx, b.ty) > REACH) continue;
-      for (const res of Object.keys(b.output) as ResourceKind[]) {
-        const avail = b.output[res] ?? 0;
-        if (avail > 0 && canCarry(g, res)) {
-          const moved = addToBarrow(g, res, avail);
-          b.output[res] = avail - moved;
-          bump();
-          return;
+      for (const buf of [b.output, b.input]) {
+        for (const res of Object.keys(buf) as ResourceKind[]) {
+          const avail = buf[res] ?? 0;
+          if (avail > 0 && canCarry(g, res)) {
+            const moved = addToBarrow(g, res, avail);
+            buf[res] = avail - moved;
+            bump();
+            return;
+          }
         }
       }
     }
