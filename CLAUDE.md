@@ -258,7 +258,70 @@ Date: YYYY-MM-DD · Status: Accepted
   badges (no-power/needs-input/output-full/cold), floating action prompts, delivery highlights, and a
   click-to-inspect info panel. 17 Vitest green; verifier passes. Art direction explored first via a
   published pixel-steampunk mockup (Plate II). See `docs/work/2026-07-20-visual-guidance-pass.md`.
-- **Deferred fast-follow:** true low-res pixel-upscale (literal Plate II crispness), flume/sawmill/
-  clamp/blacksmith building art, bigger status badges, sound/juice.
+- **True-dimetric visual pass (2026-07-23, branch `claude/visual-design-pass-review-lnysno`).**
+  Ported the locked art-direction artifact (Plate III · Rev C, pitch B) into the renderer: new
+  `render/kit.ts` component kit (shaded iso boxes, roofs, chimneys+smoke, face-mounted
+  cogs/wheels/windows, sagging shafts, trestles), plate palette ramps, block-earth cliffs with
+  strata, recessed water with bank walls/waterfalls/flow glints, sky backdrop, and all ten
+  buildings re-authored as dimetric volumes (incl. the previously-deferred flume-as-directional-
+  trough, head-gate, incline rails+cart, clamp mound). One sorted back-to-front dynamic pass —
+  the player walks behind buildings correctly. Render-only; sim untouched. 19 Vitest + verifier
+  green. See `docs/work/2026-07-23-dimetric-visual-pass.md`.
+- **Ground, flora, and light (2026-07-25, branch `claude/game-visual-improvements-4liquw`, on top of
+  the dimetric pass).** Three fixes from a screenshot review of the pass, all one problem — the world
+  read as *tiles with objects on them*: (1) dropped the per-tile diamond outline (graph paper on the
+  works floor) for two-octave `patchNoise` value variation plus authored clutter (pebbles, scree,
+  tufts, damp patches, cart ruts that run edge-to-edge along a row); the placement grid now appears
+  only in build mode, local to the cursor. Also folded `forest` into the grass *height* ramp — keying
+  it to one colour two-toned every wooded tile and put the lattice straight back. (2) Trees/stumps/ore
+  stand off-centre via a shared `floraOffset` (so felling doesn't move the trunk), with three canopy
+  silhouettes and a four-entry green ramp. (3) One documented sun (`SUN` in `palette.ts`, derived
+  from `kit.box()`'s own face shading rather than invented), driving `castShadow` (footprint-sweep
+  hexagon, one polygon so alpha can't double-darken) and `blobShadow` for every caster — buildings,
+  flora, ore, player, ground items — plus trestle posts under the line shaft. Render-only. 19 Vitest
+  + verifier green. See `docs/work/2026-07-25-ground-flora-light.md`.
+- **Material identity + air (2026-07-25, same branch, second bundle).** (4) A **material vocabulary**
+  the kit reads instead of per-kind tints — brass = power transmission, verdigris = weathered copper
+  on anything permanently wet, brick = anything that holds fire, slate = roofs, timber = structure.
+  So: brick smithy under a verdigris roof (the works' one strong hue break), brick hearth course
+  under the furnace's iron stack, verdigris bearing plate on the waterwheel, verdigris-bound flume
+  head-gate, slate on the sawmill. `BUILDING_COLORS` deleted — a flat colour per kind beside a
+  material vocabulary is a second, silently-diverging source of truth. (5) Water desaturated: at full
+  chroma the river out-pulled the furnace glow, which is meant to be the eye's destination. (6)
+  Aerial perspective as one screen-space haze gradient (the camera is player-centred, so screen
+  height *is* distance — no per-tile fog threaded through the kit), plus an **out-of-bounds terrain
+  skirt** so the valley recedes into haze instead of ending on a hard diagonal. (8) Waterfall foam is
+  a filled mass, not a bare ring that read as a stray debug circle. (9) Terrace-base AO — cliffs sit
+  in a pool of their own shade, so the elevation spine reads as real drops. Render-only. 19 Vitest +
+  verifier green. See `docs/work/2026-07-25-materials-and-air.md`.
+- **Buildings sit in their own geometry (2026-07-25, same branch, third bundle).** From a per-building
+  audit — each kind alone, flat ground, 4× zoom, tile footprint ringed, which made three sessions'
+  worth of invisible drift obvious at once. Root causes, not nudges: `chimney()` took a *corner* and
+  drew its stack at `wx+0.41`, so all three callers passed a centre to a corner parameter — signature
+  now takes the centre, and new `roofHeightAt()` seats chimneys on the roof surface rather than at the
+  eave; new `bandAround()` hoops a box along its two visible faces (the furnace's brass bands were
+  screen-space horizontal rects crossing the silhouette); `SHADOW_FOOT` widened to `[ix,iy,w,d]` since
+  one inset for both axes had every non-square building's shadow off on y (and the furnace's outright
+  wrong after the brick course widened its base). Furnace tap-hole moved into the **brick hearth**
+  where a blast furnace actually taps, its glow layered so it stops reading as an orange decal; cogs
+  re-anchored onto wall planes. Also: **tree canopies were lit from the wrong side** — screen-right,
+  while `kit.box()` has always lit from screen-left — so every tree opposed every building; flipped,
+  with a sun-side rim. Player got a displacement-driven **walk cycle** + idle breathing (render-only,
+  no sim state), and the action prompt a backing plate clear of status badges. 19 Vitest + verifier
+  green. See `docs/work/2026-07-25-buildings-sit-right.md`.
+- **Rail pitch (2026-07-25, `docs/design/rail-pitch.md`) — pitch only, nothing built.** A horse-drawn
+  **plateway**, not a train set: iron edge-rails, one lot per wagon, and gloriously unable to climb —
+  the desire chain is relief on the flat, then HUNGER as wagons queue at every rise, pointing at
+  rope-worked inclines and then steam. Visual spec grounded in the tile contract and the material
+  vocabulary (recessed ballast bed so the route reads as a ribbon at 1×, real quarter-curves, brass
+  throw levers at points, lot visible in the wagon bed). The gravity incline is treated as rail-zero
+  and the family the plateway must match.
+- **Deferred fast-follow:** true low-res pixel-upscale (integer zoom, literal plate crispness),
+  sound/juice. Known sim nits reported in the 2026-07-23 session review (flume-without-trestles
+  destroys logs; status.ts caps duplicated from constants; HUD rebuilds DOM every frame).
+  Open visual items: **status badges scale with zoom** (now the loudest thing in frame at close
+  zoom), **world-gen band wobble** (the terraces are still perfectly straight diagonals — `bandHeight`
+  keys purely off the row; it's sim, not render, so it wants its own branch with tests), and the
+  emoji/glyph mismatch in `RESOURCE_GLYPH`.
 - **Next:** balance/feel pass after live play (constants in `src/lib/sim/constants.ts`), the pixel
   fast-follow, then post-MVP arcs (demand-pull town, steam, rail, aqueducts) per `docs/ROADMAP.md`.
