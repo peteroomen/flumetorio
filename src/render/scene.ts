@@ -11,10 +11,11 @@ import { placementError, waterNeighbour } from '@/lib/sim/buildings';
 import { isPoweredAt } from '@/lib/sim/machines';
 import { buildingStatus, isDropTargetKind, promptFor, type StatusKey } from '@/lib/sim/status';
 import type { ViewState } from '@/ui/view';
-import { drawKey, HEIGHT_STEP, pointInQuad, project, TILE_HALF_H, TILE_HALF_W, tileDiamond, type Pt } from './iso';
+import { drawKey, HEIGHT_STEP, pointInQuad, project, TILE_HALF_H, TILE_HALF_W, tileDiamond } from './iso';
 import {
   barrel,
   blobShadow,
+  bandAround,
   box,
   castShadow,
   chimney,
@@ -24,6 +25,7 @@ import {
   flat,
   plankStack,
   roof,
+  roofHeightAt,
   shaft,
   shaftPoint,
   smoke,
@@ -56,15 +58,17 @@ const SHADOW_HZ: Record<BuildingKind, number> = {
   blacksmith: 1.5,
 };
 
-// Footprint each kind casts from, as [inset, size] in tiles — matches the massing in drawBuilding.
-const SHADOW_FOOT: Partial<Record<BuildingKind, [number, number]>> = {
-  stockpile: [0.08, 0.84],
-  sawmill: [0.06, 0.88],
-  blacksmith: [0.08, 0.84],
-  clamp: [0.12, 0.76],
-  furnace: [0.14, 0.72],
-  waterwheel: [0.2, 0.6],
-  pitsaw: [0.2, 0.6],
+// Footprint each kind casts from, as [insetX, insetY, width, depth] in tiles — copied from the
+// base `box()` of the massing in drawBuilding. One inset and one size applied to both axes left
+// every non-square building's shadow offset on y.
+const SHADOW_FOOT: Partial<Record<BuildingKind, [number, number, number, number]>> = {
+  stockpile: [0.08, 0.08, 0.84, 0.84],
+  sawmill: [0.06, 0.12, 0.88, 0.78],
+  blacksmith: [0.08, 0.14, 0.84, 0.74],
+  clamp: [0.12, 0.12, 0.76, 0.76],
+  furnace: [0.06, 0.06, 0.88, 0.88], // the brick hearth course, not the iron stack above it
+  waterwheel: [0.2, 0.2, 0.6, 0.6],
+  pitsaw: [0.2, 0.2, 0.6, 0.6],
 };
 
 // A tree/stump's off-centre stand within its tile. Shared by the canopy and the stump it leaves,
@@ -157,6 +161,9 @@ export class Scene {
   private overlayLayer = new Container();
   private overlayPool: Text[] = [];
   private promptText = new Text({ text: '', style: PROMPT_STYLE });
+  private walkPhase = 0;
+  private lastPx = 0;
+  private lastPy = 0;
   private terrainDirty = true;
   private lastTerrainSig = '';
   private lastSkySize = '';
@@ -658,8 +665,15 @@ export class Scene {
       const w = (spread - i * (spread * 0.26)) * s;
       const yTop = c.y - (14 + i * step) * s;
       const yBot = c.y - (2 + i * step) * s;
-      g.poly([c.x, yTop, c.x - w, yBot, c.x, yBot]).fill({ color: dark });
-      g.poly([c.x, yTop, c.x + w, yBot, c.x, yBot]).fill({ color: lit });
+      // Screen-LEFT is the lit side: `kit.box()` shades the +x (screen lower-right) wall darkest,
+      // so the sun is up-screen-left. The canopy used to be lit from the right — inverted against
+      // every building in frame.
+      g.poly([c.x, yTop, c.x - w, yBot, c.x, yBot]).fill({ color: lit });
+      g.poly([c.x, yTop, c.x + w, yBot, c.x, yBot]).fill({ color: dark });
+      // a thin rim catching the sun along the lit edge
+      g.moveTo(c.x, yTop)
+        .lineTo(c.x - w, yBot)
+        .stroke({ width: 1, color: shade(lit, 1.22), alpha: 0.75 });
     }
   }
 
@@ -708,11 +722,10 @@ export class Scene {
     const h = heightAt(state.tiles, b.tx, b.ty);
     const x = b.tx;
     const y = b.ty;
-    const c = project(x + 0.5, y + 0.5, h);
     // Ground the massing before drawing it. Kinds without a footprint entry (flume, incline) are
     // open trestlework — a solid slab under them would read as a floor, not a shadow.
     const foot = SHADOW_FOOT[b.kind];
-    if (foot) castShadow(g, x + foot[0], y + foot[0], h, foot[1], foot[1], SHADOW_HZ[b.kind]);
+    if (foot) castShadow(g, x + foot[0], y + foot[1], h, foot[2], foot[3], SHADOW_HZ[b.kind]);
     switch (b.kind) {
       case 'stockpile': {
         box(g, x + 0.08, y + 0.08, h, 0.84, 0.84, 0.07, COLORS.wood);
@@ -743,9 +756,11 @@ export class Scene {
         box(g, x + 0.06, y + 0.12, h, 0.88, 0.78, 0.16, COLORS.stone);
         box(g, x + 0.1, y + 0.16, h + 0.16, 0.8, 0.7, 0.68, COLORS.wood);
         roof(g, x + 0.04, y + 0.1, h + 0.84, 0.92, 0.82, 0.42, COLORS.slate);
-        faceWindow(g, { x: x + 0.48, y: y + 0.86, h }, { x: x + 0.88, y: y + 0.86, h }, 0.32, 0.6, t, working);
-        chimney(g, x + 0.38, y + 0.18, h + 0.84, t, 0.7, true, working);
-        faceCog(g, project(x + 0.2, y + 0.87, h + 0.42), 'left', 6, powered ? -t * 1.1 : -0.4, COLORS.brass, COLORS.brassD);
+        faceWindow(g, { x: x + 0.52, y: y + 0.86, h }, { x: x + 0.9, y: y + 0.86, h }, 0.32, 0.6, t, working);
+        // seated on the near slope at the roof's actual surface height there, not at the eave
+        chimney(g, x + 0.44, y + 0.66, h + 0.84 + roofHeightAt(0.42, 0.43, 0.68), t, 0.6, true, working);
+        // sized and centred to fit its wall — teeth used to overhang the silhouette
+        faceCog(g, project(x + 0.32, y + 0.87, h + 0.44), 'left', 5, powered ? -t * 1.1 : -0.4, COLORS.brass, COLORS.brassD);
         if ((b.input.log ?? 0) > 0) {
           box(g, x + 0.62, y + 0.86, h, 0.3, 0.12, 0.1, 0x9c6b3b);
           box(g, x + 0.66, y + 0.86, h + 0.1, 0.22, 0.12, 0.09, 0x8a5c33);
@@ -759,7 +774,7 @@ export class Scene {
         box(g, x + 0.08, y + 0.14, h, 0.84, 0.74, 0.8, COLORS.brick);
         roof(g, x + 0.02, y + 0.08, h + 0.8, 0.96, 0.86, 0.48, COLORS.verd);
         faceWindow(g, { x: x + 0.08, y: y + 0.88, h }, { x: x + 0.92, y: y + 0.88, h }, 0.22, 0.6, t, lit);
-        chimney(g, x + 0.34, y + 0.16, h + 0.8, t, 0.85, true, lit);
+        chimney(g, x + 0.44, y + 0.66, h + 0.8 + roofHeightAt(0.48, 0.44, 0.67), t, 0.72, true, lit);
         // anvil on a block out front
         box(g, x + 0.72, y + 0.86, h, 0.14, 0.1, 0.1, COLORS.woodD);
         box(g, x + 0.7, y + 0.85, h + 0.1, 0.18, 0.12, 0.07, COLORS.iron);
@@ -795,7 +810,7 @@ export class Scene {
         break;
       }
       case 'furnace': {
-        this.drawFurnace(g, b, h, t, c);
+        this.drawFurnace(g, b, h, t);
         break;
       }
       case 'flumeHead':
@@ -874,7 +889,7 @@ export class Scene {
     }
   }
 
-  private drawFurnace(g: Graphics, b: Building, h: number, t: number, c: Pt): void {
+  private drawFurnace(g: Graphics, b: Building, h: number, t: number): void {
     const x = b.tx;
     const y = b.ty;
     const heat = Math.max(0, Math.min(1, (b.heat ?? 0) / 100));
@@ -883,28 +898,35 @@ export class Scene {
     box(g, x + 0.1, y + 0.1, h + 0.26, 0.8, 0.8, 0.46, COLORS.iron);
     box(g, x + 0.19, y + 0.19, h + 0.72, 0.62, 0.62, 0.72, COLORS.iron);
     box(g, x + 0.27, y + 0.27, h + 1.44, 0.46, 0.46, 0.36, COLORS.iron);
-    // brass hoop bands + rivets across the front
+    // brass hoop bands, each wrapping the stage it belongs to
     for (const bd of [
-      { z: 0.32, w: 22 },
-      { z: 1.0, w: 17 },
-      { z: 1.62, w: 12 },
+      { i: 0.1, s: 0.8, z: 0.32 },
+      { i: 0.19, s: 0.62, z: 1.0 },
+      { i: 0.27, s: 0.46, z: 1.62 },
     ]) {
-      const p = project(x + 0.5, y + 0.5, h + bd.z);
-      g.rect(p.x - bd.w, p.y + 6, bd.w * 2, 2).fill({ color: COLORS.brass });
-      for (let rv = -bd.w + 3; rv <= bd.w - 3; rv += 6) {
-        g.rect(p.x + rv, p.y + 8.5, 1, 1).fill({ color: COLORS.brassD });
-      }
+      bandAround(g, x + bd.i, y + bd.i, h, bd.s, bd.s, bd.z, COLORS.brass, 2, COLORS.brassD);
     }
-    chimney(g, x + 0.34, y + 0.16, h + 1.8, t, 0.55, false, heat > 0.15);
+    chimney(g, x + 0.5, y + 0.5, h + 1.8, t, 0.55, false, heat > 0.15);
     if (heat > 0.5) {
       const cap = project(x + 0.5, y + 0.5, h + 2.35);
       smoke(g, cap.x + 4, cap.y + 2, t + 0.4, 4, 30, COLORS.soot, 0.3);
     }
-    // tap-hole arch on the near-left face
-    const A = (u: number, z: number) => project(x + 0.24 + u * 0.36, y + 0.9, h + 0.04 + z * 0.42);
+    // Tap-hole, in the brick hearth course — a blast furnace taps from its hearth, and that is
+    // exactly the course the brick adds. It also used to straddle the brick/iron seam and sit
+    // half-buried in the plinth, which stands 0.04 proud of the iron above it.
+    const A = (u: number, z: number) => project(x + 0.28 + u * 0.44, y + 0.94, h + 0.03 + z * 0.2);
+    const glow = project(x + 0.5, y + 0.94, h + 0.12);
     const relightFlicker = (b.relighting ?? 0) > 0 && Math.sin(t * 14) > 0;
     if (heat > 0.04 || relightFlicker) {
-      g.circle(c.x - 6, c.y - 3, 5 + 7 * heat).fill({ color: COLORS.ember, alpha: 0.1 + 0.3 * heat });
+      // Layered falloff. A single wide circle at this alpha read as a hard orange disc spilling
+      // out past the furnace rather than as light coming off the tap-hole.
+      for (const [r, a] of [
+        [3.5 + 5.5 * heat, 0.1 + 0.16 * heat],
+        [2.2 + 3.4 * heat, 0.12 + 0.18 * heat],
+        [1.2 + 1.8 * heat, 0.14 + 0.2 * heat],
+      ]) {
+        g.circle(glow.x, glow.y, r).fill({ color: COLORS.ember, alpha: a });
+      }
       g.poly(flat([A(0, 0), A(1, 0), A(1, 0.8), A(0.5, 1), A(0, 0.8)])).fill({ color: COLORS.emberD });
       g.poly(flat([A(0.16, 0.1), A(0.84, 0.1), A(0.84, 0.68), A(0.5, 0.85), A(0.16, 0.68)])).fill({
         color: heat > 0.6 ? COLORS.emberH : COLORS.ember,
@@ -912,7 +934,8 @@ export class Scene {
     } else {
       g.poly(flat([A(0, 0), A(1, 0), A(1, 0.8), A(0.5, 1), A(0, 0.8)])).fill({ color: 0x1a1512 });
     }
-    faceCog(g, project(x + 0.11, y + 0.62, h + 0.34), 'left', 6, heat > 0.04 ? t * 0.7 : 0.3, COLORS.brass, COLORS.brassD);
+    // on the iron stage's wall plane (y+0.9) and clear of the brick plinth's top at h+0.26
+    faceCog(g, project(x + 0.5, y + 0.9, h + 0.5), 'left', 6, heat > 0.04 ? t * 0.7 : 0.3, COLORS.brass, COLORS.brassD);
   }
 
   private drawIncline(g: Graphics, state: GameState, b: Building, h: number): void {
@@ -1056,18 +1079,34 @@ export class Scene {
     sx /= sl;
     sy /= sl;
 
+    // Walk cycle, driven by the player's own movement between frames — render-only, so the sim
+    // keeps no animation state. Standing still, the phase holds and he breathes instead.
+    const moved = Math.hypot(p.x - this.lastPx, p.y - this.lastPy);
+    this.lastPx = p.x;
+    this.lastPy = p.y;
+    const walking = moved > 0.0004;
+    if (walking) this.walkPhase += moved * 5.2;
+    const swing = walking ? Math.sin(this.walkPhase) : 0;
+    const bob = walking
+      ? Math.abs(Math.cos(this.walkPhase)) * 1.1
+      : Math.sin(state.timeMs / 700) * 0.35;
+
     blobShadow(g, p.x, p.y, h, 0.11, 1.05, 0.25);
-    // legs
-    g.rect(c.x - 3.5, c.y - 6, 3, 6).fill({ color: 0x2e2a26 });
-    g.rect(c.x + 0.5, c.y - 6, 3, 6).fill({ color: 0x2e2a26 });
+    const by = c.y - bob; // body rides the bob; feet stay on the ground
+    // legs, swinging out of phase
+    g.rect(c.x - 3.5, c.y - 6 - swing * 1.6, 3, 6 + swing * 1.6).fill({ color: 0x2e2a26 });
+    g.rect(c.x + 0.5, c.y - 6 + swing * 1.6, 3, 6 - swing * 1.6).fill({ color: 0x2e2a26 });
     // coat
-    g.rect(c.x - 4.5, c.y - 15, 9, 10).fill({ color: 0x3e4652 });
-    g.rect(c.x - 4.5, c.y - 15, 9, 2).fill({ color: 0x4d5766 });
-    g.rect(c.x - 0.5, c.y - 13, 1, 7).fill({ color: COLORS.brassD }); // button line
+    g.rect(c.x - 4.5, by - 15, 9, 10).fill({ color: 0x3e4652 });
+    g.rect(c.x - 4.5, by - 15, 9, 2).fill({ color: 0x4d5766 });
+    g.rect(c.x - 0.5, by - 13, 1, 7).fill({ color: COLORS.brassD }); // button line
+    // arms swing opposite the legs
+    g.rect(c.x - 5.5, by - 14 + swing * 1.4, 2, 6).fill({ color: 0x353d48 });
+    g.rect(c.x + 3.5, by - 14 - swing * 1.4, 2, 6).fill({ color: 0x353d48 });
     // head + flat cap, brim toward facing
-    g.circle(c.x, c.y - 18, 3.6).fill({ color: 0xf0d9a8 });
-    g.rect(c.x - 4, c.y - 23, 8, 3).fill({ color: 0x5a4a34 });
-    g.rect(c.x - 4 + (sx > 0 ? 4 : -2), c.y - 21, 6, 1.5).fill({ color: 0x4a3c2a });
+    g.circle(c.x, by - 18, 3.6).fill({ color: 0xf0d9a8 });
+    g.rect(c.x - 4, by - 23, 8, 3).fill({ color: 0x5a4a34 });
+    g.rect(c.x - 4 + (sx > 0 ? 4 : -2), by - 21, 6, 1.5).fill({ color: 0x4a3c2a });
 
     // the barrow, when laden — pushed ahead of the walker
     if (p.carry && p.carryCount > 0) {
@@ -1186,10 +1225,18 @@ export class Scene {
     if (prompt) {
       const pc = project(state.player.x, state.player.y, this.playerHeight(state));
       this.promptText.text = prompt;
+      const s = 1 / Math.max(1, view.zoom); // stay screen-sized when zoomed in
       this.promptText.x = pc.x;
-      this.promptText.y = pc.y - 44;
-      this.promptText.scale.set(1 / Math.max(1, view.zoom)); // stay screen-sized when zoomed in
+      this.promptText.y = pc.y - 52; // clear of machine status badges
+      this.promptText.scale.set(s);
       this.promptText.visible = true;
+      // A backing plate, drawn into the guidance layer (which sits under promptText). Bare
+      // stroked text on open ground read as debug output rather than as an offered verb.
+      const pw = this.promptText.width + 10 * s;
+      const ph = this.promptText.height + 5 * s;
+      g.roundRect(pc.x - pw / 2, pc.y - 52 - ph, pw, ph, 3 * s)
+        .fill({ color: 0x11151c, alpha: 0.82 })
+        .stroke({ width: 1, color: COLORS.brassD, alpha: 0.7 });
     } else {
       this.promptText.visible = false;
     }

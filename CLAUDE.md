@@ -294,6 +294,28 @@ Date: YYYY-MM-DD · Status: Accepted
   a filled mass, not a bare ring that read as a stray debug circle. (9) Terrace-base AO — cliffs sit
   in a pool of their own shade, so the elevation spine reads as real drops. Render-only. 19 Vitest +
   verifier green. See `docs/work/2026-07-25-materials-and-air.md`.
+- **Buildings sit in their own geometry (2026-07-25, same branch, third bundle).** From a per-building
+  audit — each kind alone, flat ground, 4× zoom, tile footprint ringed, which made three sessions'
+  worth of invisible drift obvious at once. Root causes, not nudges: `chimney()` took a *corner* and
+  drew its stack at `wx+0.41`, so all three callers passed a centre to a corner parameter — signature
+  now takes the centre, and new `roofHeightAt()` seats chimneys on the roof surface rather than at the
+  eave; new `bandAround()` hoops a box along its two visible faces (the furnace's brass bands were
+  screen-space horizontal rects crossing the silhouette); `SHADOW_FOOT` widened to `[ix,iy,w,d]` since
+  one inset for both axes had every non-square building's shadow off on y (and the furnace's outright
+  wrong after the brick course widened its base). Furnace tap-hole moved into the **brick hearth**
+  where a blast furnace actually taps, its glow layered so it stops reading as an orange decal; cogs
+  re-anchored onto wall planes. Also: **tree canopies were lit from the wrong side** — screen-right,
+  while `kit.box()` has always lit from screen-left — so every tree opposed every building; flipped,
+  with a sun-side rim. Player got a displacement-driven **walk cycle** + idle breathing (render-only,
+  no sim state), and the action prompt a backing plate clear of status badges. 19 Vitest + verifier
+  green. See `docs/work/2026-07-25-buildings-sit-right.md`.
+- **Rail pitch (2026-07-25, `docs/design/rail-pitch.md`) — pitch only, nothing built.** A horse-drawn
+  **plateway**, not a train set: iron edge-rails, one lot per wagon, and gloriously unable to climb —
+  the desire chain is relief on the flat, then HUNGER as wagons queue at every rise, pointing at
+  rope-worked inclines and then steam. Visual spec grounded in the tile contract and the material
+  vocabulary (recessed ballast bed so the route reads as a ribbon at 1×, real quarter-curves, brass
+  throw levers at points, lot visible in the wagon bed). The gravity incline is treated as rail-zero
+  and the family the plateway must match.
 - **Deferred fast-follow:** true low-res pixel-upscale (integer zoom, literal plate crispness),
   sound/juice. Known sim nits reported in the 2026-07-23 session review (flume-without-trestles
   destroys logs; status.ts caps duplicated from constants; HUD rebuilds DOM every frame).
