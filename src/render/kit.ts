@@ -4,7 +4,58 @@
 
 import type { Graphics } from 'pixi.js';
 import { project, TILE_HALF_H, TILE_HALF_W, type Pt } from './iso';
-import { COLORS, shade } from './palette';
+import { COLORS, SHADOW_ALPHA, SHADOW_PER_LEVEL, shade, SUN } from './palette';
+
+// ---- shadows ----
+// A box's cast shadow is the Minkowski sum of its footprint with the light vector. For a sweep
+// with both components positive that's a hexagon — drawn as ONE polygon so the overlap between
+// base and offset can't double-darken.
+export function castShadow(
+  g: Graphics,
+  wx: number,
+  wy: number,
+  h: number,
+  w: number,
+  d: number,
+  hz: number,
+  alpha = SHADOW_ALPHA,
+): void {
+  const len = hz * SHADOW_PER_LEVEL;
+  const ox = SUN.x * len;
+  const oy = SUN.y * len;
+  const P = (x: number, y: number) => project(x, y, h);
+  g.poly(
+    flat([
+      P(wx, wy),
+      P(wx + w, wy),
+      P(wx + w + ox, wy + oy),
+      P(wx + w + ox, wy + d + oy),
+      P(wx + ox, wy + d + oy),
+      P(wx, wy + d),
+    ]),
+  ).fill({ color: 0x000000, alpha });
+}
+
+// Cheaper shadow for round/irregular casters (flora, ore, the player): an ellipse stretched along
+// the sun vector. `hz` is the caster's height in levels; `r` its ground radius in tiles.
+// Centred on HALF the sweep, not the whole of it — a fully displaced blob detaches from the trunk
+// and reads as a separate dark object lying on the ground.
+export function blobShadow(
+  g: Graphics,
+  wx: number,
+  wy: number,
+  h: number,
+  r: number,
+  hz: number,
+  alpha = SHADOW_ALPHA,
+): void {
+  const len = hz * SHADOW_PER_LEVEL;
+  const c = project(wx + SUN.x * len * 0.5, wy + SUN.y * len * 0.5, h);
+  g.ellipse(c.x, c.y, (r + len * 0.5) * TILE_HALF_W, (r + len * 0.14) * TILE_HALF_H).fill({
+    color: 0x000000,
+    alpha,
+  });
+}
 
 export type Face = 'left' | 'right'; // left = the +y wall (screen lower-left), right = the +x wall
 
@@ -60,6 +111,38 @@ export function box(
   ).fill({ color: col });
 }
 
+// A band hooping a box at height `z`. It follows the two visible faces and meets at the near
+// vertical edge, so it reads as a shallow V — a straight screen-space rect crosses the silhouette
+// and overshoots it wherever the box is narrower than the rect.
+export function bandAround(
+  g: Graphics,
+  wx: number,
+  wy: number,
+  h: number,
+  w: number,
+  d: number,
+  z: number,
+  col: number,
+  thick = 2,
+  rivet?: number,
+): void {
+  const a = project(wx, wy + d, h + z); // far end of the +y (screen lower-left) wall
+  const k = project(wx + w, wy + d, h + z); // the near corner where the two walls meet
+  const b = project(wx + w, wy, h + z); // far end of the +x (screen lower-right) wall
+  g.moveTo(a.x, a.y).lineTo(k.x, k.y).lineTo(b.x, b.y).stroke({ width: thick, color: col });
+  if (rivet === undefined) return;
+  for (const [p, q] of [
+    [a, k],
+    [k, b],
+  ]) {
+    const n = Math.max(2, Math.round(Math.hypot(q.x - p.x, q.y - p.y) / 6));
+    for (let i = 1; i < n; i++) {
+      const f = i / n;
+      g.rect(p.x + (q.x - p.x) * f - 0.5, p.y + (q.y - p.y) * f + thick, 1, 1).fill({ color: rivet });
+    }
+  }
+}
+
 // Two-slope roof with ridge + tile-row texture, apex over the footprint centre.
 export function roof(
   g: Graphics,
@@ -111,11 +194,20 @@ export function smoke(
 }
 
 // ---- kit parts ----
+// Height of a two-slope roof above its base, at normalised position (u,v) across the footprint.
+// Used to seat things that stand ON a roof, so they don't have to be nudged by eye.
+export function roofHeightAt(peak: number, u: number, v: number): number {
+  const t = Math.min(1, Math.max(Math.abs(u - 0.5), Math.abs(v - 0.5)) * 2);
+  return peak * (1 - t);
+}
+
 // Brick (or iron) chimney with a brass lip, banding, and a smoke plume.
+// Takes the stack's CENTRE. It used to take a corner and place the stack at `wx + 0.41`, which
+// every caller then passed a centre to — so all three chimneys sat a third of a tile off.
 export function chimney(
   g: Graphics,
-  wx: number,
-  wy: number,
+  cx: number,
+  cy: number,
   h: number,
   tSec: number,
   tall = 1.0,
@@ -124,14 +216,13 @@ export function chimney(
 ): void {
   const col = brick ? COLORS.brick : COLORS.iron;
   const cd = brick ? COLORS.brickD : COLORS.ironD;
-  box(g, wx + 0.41, wy + 0.41, h, 0.18, 0.18, tall, col);
-  box(g, wx + 0.38, wy + 0.38, h + tall - 0.05, 0.24, 0.24, 0.06, COLORS.brass);
+  box(g, cx - 0.09, cy - 0.09, h, 0.18, 0.18, tall, col);
+  box(g, cx - 0.12, cy - 0.12, h + tall - 0.05, 0.24, 0.24, 0.06, COLORS.brass);
   for (let b = 0.25; b < tall - 0.1; b += 0.35) {
-    const p = project(wx + 0.5, wy + 0.5, h + b);
-    g.rect(p.x - 5, p.y + 3, 10, 1).fill({ color: cd, alpha: 0.85 });
+    bandAround(g, cx - 0.09, cy - 0.09, h, 0.18, 0.18, b, cd, 1);
   }
   if (smoking) {
-    const cap = project(wx + 0.5, wy + 0.5, h + tall);
+    const cap = project(cx, cy, h + tall);
     smoke(g, cap.x, cap.y - 3, tSec, 7, 42, COLORS.soot);
   }
 }
@@ -232,18 +323,22 @@ export interface Pt3 {
 }
 
 // A sagging line-shaft / belt between two screen points, with travelling pulse dots.
+// The sagging curve a shaft hangs on. Exported so supports can be planted exactly on it.
+export function shaftPoint(p0: Pt, p1: Pt, f: number): Pt {
+  const mx = (p0.x + p1.x) / 2;
+  const my = (p0.y + p1.y) / 2 + 6; // sag
+  const omf = 1 - f;
+  return {
+    x: omf * omf * p0.x + 2 * omf * f * mx + f * f * p1.x,
+    y: omf * omf * p0.y + 2 * omf * f * my + f * f * p1.y,
+  };
+}
+
 export function shaft(g: Graphics, p0: Pt, p1: Pt, tSec: number, turning: boolean): void {
   const mx = (p0.x + p1.x) / 2;
   const my = (p0.y + p1.y) / 2 + 6; // sag
   const pts: Pt[] = [];
-  for (let i = 0; i <= 8; i++) {
-    const f = i / 8;
-    const omf = 1 - f;
-    pts.push({
-      x: omf * omf * p0.x + 2 * omf * f * mx + f * f * p1.x,
-      y: omf * omf * p0.y + 2 * omf * f * my + f * f * p1.y,
-    });
-  }
+  for (let i = 0; i <= 8; i++) pts.push(shaftPoint(p0, p1, i / 8));
   g.moveTo(pts[0].x, pts[0].y);
   for (const p of pts.slice(1)) g.lineTo(p.x, p.y);
   g.stroke({ width: 3, color: COLORS.brassD, alpha: 0.9 });

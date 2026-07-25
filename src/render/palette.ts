@@ -1,7 +1,7 @@
 // Locked palette — Plate III · Rev C ("soot & steam"). The hex ramps come verbatim from the
 // published art-direction artifact; change them there first, then here.
 
-import type { BuildingKind, ResourceKind, Terrain } from '@/lib/sim/types';
+import type { ResourceKind, Terrain } from '@/lib/sim/types';
 
 export const COLORS = {
   bg: 0x14141d,
@@ -19,9 +19,12 @@ export const COLORS = {
   rockT: 0x726c62,
   rockD: 0x453f38,
 
-  water0: 0x357089,
-  water1: 0x4f97b2,
-  water2: 0x74bcd6,
+  // Desaturated off the plate's originals: at full chroma the river was the most saturated thing
+  // on screen and out-pulled the furnace glow, which is meant to be the eye's destination.
+  water0: 0x2f5f72,
+  water1: 0x497f93,
+  water2: 0x74a8b8,
+  foam: 0xcfe0e6,
 
   iron: 0x4a4b56,
   ironL: 0x66677a,
@@ -33,6 +36,11 @@ export const COLORS = {
   copper: 0xb06a3a,
   copperL: 0xd08a54,
   verd: 0x4a9c80,
+  verdL: 0x6cbc9e,
+  verdD: 0x2f6b57,
+  slate: 0x4d525e,
+  slateL: 0x646a78,
+  slateD: 0x343842,
   stone: 0x726c62,
   stoneL: 0x8a8375,
   stoneD: 0x4a453d,
@@ -63,10 +71,11 @@ export function terrainColor(terrain: Terrain, height: number): number {
   switch (terrain) {
     case 'water':
       return COLORS.water1;
-    case 'forest':
-      return COLORS.grass;
     case 'rock':
       return height >= 2 ? COLORS.rockT : COLORS.rock;
+    // Forest shares the grass ramp *including its height band* — keying it to a single colour
+    // two-toned every wooded tile against its neighbours and put the lattice straight back.
+    case 'forest':
     case 'grass':
     default:
       if (height >= 2) return COLORS.grassT;
@@ -80,6 +89,39 @@ export function tileNoise(tx: number, ty: number): number {
   return ((tx * 73 + ty * 151 + tx * ty * 13) % 17) / 17;
 }
 
+// Stable integer hash -> [0,1). Cosmetic-only, but deliberately *not* Math.random: the terrain
+// layer is cached and redrawn on demand, so anything scattered on it must land identically every
+// rebuild or the ground shimmers.
+export function hash01(x: number, y: number, salt = 0): number {
+  let h = Math.imul(x | 0, 374761393) ^ Math.imul(y | 0, 668265263) ^ Math.imul(salt | 0, 2246822519);
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+
+// Smoothed value noise over a lattice of `scale` tiles — large-scale ground patchiness, so the
+// floor varies over metres rather than per tile (which just reads as noise).
+export function patchNoise(tx: number, ty: number, scale: number, salt = 0): number {
+  const x = tx / scale;
+  const y = ty / scale;
+  const x0 = Math.floor(x);
+  const y0 = Math.floor(y);
+  const fx = x - x0;
+  const fy = y - y0;
+  const sx = fx * fx * (3 - 2 * fx);
+  const sy = fy * fy * (3 - 2 * fy);
+  const n0 = hash01(x0, y0, salt) * (1 - sx) + hash01(x0 + 1, y0, salt) * sx;
+  const n1 = hash01(x0, y0 + 1, salt) * (1 - sx) + hash01(x0 + 1, y0 + 1, salt) * sx;
+  return n0 * (1 - sy) + n1 * sy;
+}
+
+// ---- the sun ----
+// Derived from the kit's own massing, not invented: `box()` fills the +x wall at 0.55 and the +y
+// wall at 0.75, so the light is opposite +x with a smaller -y component. Every shadow in the
+// renderer sweeps along this vector (world tiles), scaled by the caster's height in levels.
+export const SUN = { x: 1, y: 0.28 } as const;
+export const SHADOW_PER_LEVEL = 0.22; // tiles of shadow per height-level of caster
+export const SHADOW_ALPHA = 0.2;
+
 // Multiply a colour's channels by `f` (clamped) — the plate's `sh()`. f>1 brightens.
 export function shade(color: number, f: number): number {
   const r = Math.min(255, Math.round(((color >> 16) & 0xff) * f));
@@ -89,6 +131,27 @@ export function shade(color: number, f: number): number {
 }
 
 export const darken = shade;
+
+// Blend two colours; f=0 is `a`, f=1 is `b`.
+export function mix(a: number, b: number, f: number): number {
+  const g = 1 - f;
+  const r = ((a >> 16) & 0xff) * g + ((b >> 16) & 0xff) * f;
+  const gr = ((a >> 8) & 0xff) * g + ((b >> 8) & 0xff) * f;
+  const bl = (a & 0xff) * g + (b & 0xff) * f;
+  return (Math.round(r) << 16) | (Math.round(gr) << 8) | Math.round(bl);
+}
+
+// What distance fades toward. Sits between the two sky stops so the terrain skirt can dissolve
+// into the backdrop without a seam.
+export const HAZE = 0x2b2a3a;
+
+// ---- material identity ----
+// The kit reads materials, not arbitrary tints, so new buildings inherit the vocabulary:
+//   brass     — power transmission (cogs, shafts, drums, chimney lips)
+//   verdigris — weathered copper on anything permanently wet (wheel fittings, head-gate)
+//   brick     — anything that holds fire (smithy, furnace base, chimneys)
+//   slate     — roofs
+//   timber    — structure
 
 export const RESOURCE_COLORS: Record<ResourceKind, number> = {
   log: 0x9c6b3b,
@@ -106,15 +169,5 @@ export const RESOURCE_GLYPH: Record<ResourceKind, string> = {
   iron: '⬢',
 };
 
-export const BUILDING_COLORS: Record<BuildingKind, number> = {
-  stockpile: 0x6b5636,
-  pitsaw: 0x7d5430,
-  waterwheel: 0x5a3d24,
-  sawmill: 0x7d5430,
-  flume: 0x7d5430,
-  flumeHead: 0x4f97b2,
-  clamp: 0x5a4a34,
-  incline: 0x6a5a4a,
-  furnace: 0x4a4b56,
-  blacksmith: 0x726c62,
-};
+// (No per-kind building colour table: buildings are composed from the kit out of the materials
+// above, so a flat colour per kind would be a second, silently-diverging source of truth.)
