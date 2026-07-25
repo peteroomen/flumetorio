@@ -53,7 +53,10 @@ export function recomputeRailRoutes(state: GameState): void {
   for (const d of [...docks].sort((a, b) => a.id - b.id)) {
     if (owned.has(d.id)) continue;
     const route = traceRoute(state, d);
-    if (!route) {
+    // A dock whose traced mate is already paired yields: that run is served, and claiming it
+    // again would overwrite the mate's routeMateId and put a second wagon on shared track. A
+    // third terminus on one line is simply not served in this slice.
+    if (!route || owned.has(route.mate.id)) {
       d.wagon = undefined;
       continue;
     }

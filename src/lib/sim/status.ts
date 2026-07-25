@@ -4,7 +4,13 @@
 import { REACH } from './constants';
 import { count } from './buffers';
 import { isPoweredAt } from './machines';
-import { FURNACE_MIN_SMELT_HEAT } from './constants';
+import {
+  CLAMP_OUT_CAP,
+  FURNACE_IRON_CAP,
+  FURNACE_MIN_SMELT_HEAT,
+  PITSAW_OUT_CAP,
+  SAWMILL_OUT_CAP,
+} from './constants';
 import type { Building, BuildingKind, GameState, ResourceKind } from './types';
 
 export type StatusKey = 'running' | 'needsInput' | 'needsFuel' | 'noPower' | 'outputFull' | 'cold';
@@ -38,7 +44,7 @@ export function buildingStatus(state: GameState, b: Building): Status | null {
         return { key: 'needsFuel', attention: true, want: 'charcoal', label: 'Cooling — needs charcoal' };
       if (count(b.input, 'ore') < 1)
         return { key: 'needsInput', attention: true, want: 'ore', label: 'Hot but idle — needs ore' };
-      if ((b.output.iron ?? 0) >= 20)
+      if ((b.output.iron ?? 0) >= FURNACE_IRON_CAP)
         return { key: 'outputFull', attention: true, label: 'Full of iron — collect it' };
       return { key: 'running', attention: false, label: 'Smelting' };
     }
@@ -62,10 +68,11 @@ export function buildingStatus(state: GameState, b: Building): Status | null {
 }
 
 function outCapOf(b: Building): number {
-  // mirrors the per-machine output cap used by the tick
-  if (b.kind === 'clamp') return 8;
-  if (b.kind === 'pitsaw') return 4;
-  return 12; // sawmill
+  // Read from constants, never re-typed: these literals used to be duplicated here, so tuning a
+  // cap for balance would have left the "output full" badge silently lying.
+  if (b.kind === 'clamp') return CLAMP_OUT_CAP;
+  if (b.kind === 'pitsaw') return PITSAW_OUT_CAP;
+  return SAWMILL_OUT_CAP;
 }
 
 function dist(px: number, py: number, tx: number, ty: number): number {

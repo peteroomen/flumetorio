@@ -77,6 +77,51 @@ const SHADOW_FOOT: Partial<Record<BuildingKind, [number, number, number, number]
 // How far the flume's deck rides above whatever carries it.
 const FLUME_DECK_LIFT = 0.3;
 
+const RAIL_GAUGE = 0.14; // half-gauge in tiles; matches the incline's rails so they read as kin
+
+// One rail's centreline through a tile, in TILE space, for side +1 or -1.
+//
+// The offset comes from a consistent traversal — travel enters along -d1 and leaves along d2, and
+// both ends take the perpendicular of travel. Taking it from each half's own outward direction
+// flips its sign on a straight run (where d2 = -d1), which drew the same rail on either side of
+// the centre line and turned every tile into an X.
+function railPoints(
+  cx: number,
+  cy: number,
+  dirs: Dir[],
+  side: number,
+): Array<{ x: number; y: number }> {
+  const perp = (vx: number, vy: number) => ({ x: -vy, y: vx });
+  const d1 = dirs[0];
+  const pIn = perp(-d1.dx, -d1.dy);
+  const a = {
+    x: cx + d1.dx * 0.5 + pIn.x * RAIL_GAUGE * side,
+    y: cy + d1.dy * 0.5 + pIn.y * RAIL_GAUGE * side,
+  };
+  if (dirs.length < 2) {
+    return [{ x: cx + pIn.x * RAIL_GAUGE * side, y: cy + pIn.y * RAIL_GAUGE * side }, a];
+  }
+  const d2 = dirs[1];
+  const pOut = perp(d2.dx, d2.dy);
+  const e = {
+    x: cx + d2.dx * 0.5 + pOut.x * RAIL_GAUGE * side,
+    y: cy + d2.dy * 0.5 + pOut.y * RAIL_GAUGE * side,
+  };
+  if (d2.dx === -d1.dx && d2.dy === -d1.dy) return [a, e]; // straight through
+  // quarter-arc: the two rail lines meet at this corner, so it is the Bezier control point
+  const ctrl = { x: d1.dx !== 0 ? e.x : a.x, y: d1.dx !== 0 ? a.y : e.y };
+  const out: Array<{ x: number; y: number }> = [];
+  for (let i = 0; i <= 6; i++) {
+    const f = i / 6;
+    const m = 1 - f;
+    out.push({
+      x: m * m * a.x + 2 * m * f * ctrl.x + f * f * e.x,
+      y: m * m * a.y + 2 * m * f * ctrl.y + f * f * e.y,
+    });
+  }
+  return out;
+}
+
 // A tree/stump's off-centre stand within its tile. Shared by the canopy and the stump it leaves,
 // so felling doesn't teleport the trunk.
 function floraOffset(tx: number, ty: number): { jx: number; jy: number } {
@@ -170,6 +215,7 @@ export class Scene {
   private overlayPool: Text[] = [];
   private promptText = new Text({ text: '', style: PROMPT_STYLE });
   private flumeDeck = new Map<number, number>();
+  private railConns = new Map<number, FlumeConn>();
   private walkPhase = 0;
   private lastPx = 0;
   private lastPy = 0;
@@ -538,6 +584,7 @@ export class Scene {
     this.flumeDeck = this.computeFlumeDeck(state);
     const flumeConns = this.computeFlumeConns(state);
     const railConns = this.computeRailConns(state);
+    this.railConns = railConns;
 
     interface Entry {
       key: number;
@@ -1123,7 +1170,6 @@ export class Scene {
     }
     if (dirs.length === 0) dirs.push({ dx: 1, dy: 0 }, { dx: -1, dy: 0 });
 
-    const GAUGE = 0.14; // half-gauge in tiles; matches the incline's rails so they read as kin
     // ballast bed, one flat mass across every connected direction
     for (const d of dirs) {
       const px = -d.dy * 0.26;
@@ -1147,17 +1193,22 @@ export class Scene {
         g.moveTo(a.x, a.y).lineTo(e.x, e.y).stroke({ width: 2, color: COLORS.woodD });
       }
     }
-    // rails — through the centre so a corner sweeps rather than mitres
+    // Rails. The offset has to come from a consistent TRAVERSAL through the tile, not from each
+    // half's own outward direction: on a straight run the two dirs are opposite, so a per-direction
+    // perpendicular flips sign and draws the same rail on either side of the centre line — every
+    // tile became an X. Travel enters along -d1 and leaves along d2, and both ends take the
+    // perpendicular of travel, so a straight run is one straight rail and a bend pairs inner with
+    // inner. Sampled in tile space and projected: `project` is linear in (wx, wy) at fixed height.
     for (const side of [1, -1]) {
-      for (const d of dirs) {
-        const px = -d.dy * GAUGE * side;
-        const py = d.dx * GAUGE * side;
-        const mid = project(cx + px * 0.35, cy + py * 0.35, h + 0.04);
-        const e = project(cx + d.dx * 0.5 + px, cy + d.dy * 0.5 + py, h + 0.04);
-        g.moveTo(mid.x, mid.y).lineTo(e.x, e.y).stroke({ width: 2, color: COLORS.ironXD });
-        // a hairline on the sun side — iron polished by use, not a pale tube
-        g.moveTo(mid.x, mid.y - 1.2).lineTo(e.x, e.y - 1.2).stroke({ width: 0.8, color: COLORS.iron });
-      }
+      const scr = railPoints(cx, cy, dirs, side).map((q) => project(q.x, q.y, h + 0.04));
+      const stroke = (dy: number, w: number, col: number) => {
+        g.moveTo(scr[0].x, scr[0].y + dy);
+        for (const q of scr.slice(1)) g.lineTo(q.x, q.y + dy);
+        g.stroke({ width: w, color: col });
+      };
+      stroke(0, 2, COLORS.ironXD);
+      // a hairline on the sun side — iron polished by use, not a pale tube
+      stroke(-1.2, 0.8, COLORS.iron);
     }
   }
 
@@ -1692,5 +1743,18 @@ export class Scene {
   // descent as numbers rather than judging pixels. Populated by the last rendered frame.
   flumeDeckAt(tx: number, ty: number): number | undefined {
     return this.flumeDeck.get(idx(tx, ty));
+  }
+
+  // Instrument hook (ADR 002): one rail's centreline through a tile in tile space, so a verifier
+  // can prove the rails don't cross the track's centre line rather than judging pixels.
+  railPointsAt(tx: number, ty: number, side: number): Array<{ x: number; y: number }> | null {
+    const conn = this.railConns.get(idx(tx, ty));
+    if (!conn) return null;
+    const dirs: Dir[] = [];
+    for (const d of [...conn.ins, ...conn.outs]) {
+      if (!dirs.some((e) => e.dx === d.dx && e.dy === d.dy)) dirs.push(d);
+    }
+    if (dirs.length === 0) return null;
+    return railPoints(tx + 0.5, ty + 0.5, dirs, side);
   }
 }

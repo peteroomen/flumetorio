@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import { generateWorld, bandHeight, heightAt } from './world';
-import { HEIGHT_BOTTOM, HEIGHT_MID, HEIGHT_TOP } from './constants';
+import { CLAMP_OUT_CAP, FURNACE_IRON_CAP, HEIGHT_BOTTOM, HEIGHT_MID, HEIGHT_TOP } from './constants';
 import { tickMachines, bankAllOutputs } from './machines';
 import { recomputeFlumePaths, tickFlume, tickIncline, tickFeeders } from './movers';
 import { actions, getGame, makeInitialState, checkLetters } from './store';
@@ -411,5 +411,58 @@ describe('the plateway', () => {
     for (const l of g.letters) l.done = true;
     expect(allUnlocksFor(g.letters)).toContain('rail');
     expect(allUnlocksFor(g.letters)).toContain('railDock');
+  });
+});
+
+describe('audit fixes', () => {
+  it('serves a three-dock run with exactly one wagon and reciprocal pairing', () => {
+    const g = makeInitialState(1);
+    const dock = (tx: number, id: number) => {
+      const b = mkBuilding({ kind: 'railDock', tx, ty: 26, id });
+      g.buildings.push(b);
+      return b;
+    };
+    const a = dock(5, 1);
+    const b = dock(9, 2);
+    const c = dock(13, 3);
+    for (const tx of [6, 7, 8, 10, 11, 12]) {
+      g.buildings.push(mkBuilding({ kind: 'rail', tx, ty: 26, id: 100 + tx }));
+    }
+    recomputeRailRoutes(g);
+    expect(g.buildings.filter((x) => x.wagon).length).toBe(1);
+    // whatever pairing is chosen, it must be reciprocal — never a->b while b->c
+    for (const d of [a, b, c]) {
+      if (d.routeMateId === undefined) continue;
+      const mate = g.buildings.find((x) => x.id === d.routeMateId)!;
+      expect(mate.routeMateId).toBe(d.id);
+    }
+  });
+
+  it('does not destroy logs tipped into a head-gate with no run', () => {
+    const g = makeInitialState(1);
+    const head = mkBuilding({ kind: 'flumeHead', tx: 8, ty: 8, id: 1 });
+    g.buildings.push(head);
+    recomputeFlumePaths(g);
+    g.flumeItems.push({ id: 900, headId: head.id, resource: 'log', progress: 0 });
+    tickFlume(g, 100);
+    expect(g.flumeItems.length).toBe(0);
+    const dropped = g.ground.find((x) => x.tx === head.tx && x.ty === head.ty);
+    expect(dropped?.resource).toBe('log');
+    expect(dropped?.count).toBe(1);
+  });
+
+  it('reads output caps from constants, so a balance tweak cannot desync the badge', () => {
+    const g = makeInitialState(1);
+    const clamp = mkBuilding({ kind: 'clamp', tx: 5, ty: 26, input: { log: 2 } });
+    g.buildings.push(clamp);
+    clamp.output.charcoal = CLAMP_OUT_CAP - 1;
+    expect(buildingStatus(g, clamp)?.key).not.toBe('outputFull');
+    clamp.output.charcoal = CLAMP_OUT_CAP;
+    expect(buildingStatus(g, clamp)?.key).toBe('outputFull');
+
+    const furnace = mkBuilding({ kind: 'furnace', tx: 7, ty: 26, heat: 90, input: { ore: 4, charcoal: 2 } });
+    g.buildings.push(furnace);
+    furnace.output.iron = FURNACE_IRON_CAP;
+    expect(buildingStatus(g, furnace)?.key).toBe('outputFull');
   });
 });

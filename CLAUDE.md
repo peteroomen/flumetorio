@@ -341,6 +341,27 @@ Date: YYYY-MM-DD · Status: Accepted
   posts stand on the ground carrying it. Render-only. New `Scene.flumeDeckAt()` + 3 verifier checks
   read the profile as numbers (ADR 002) — the "worst flume step < ground drop" check is the
   regression guard. See `docs/work/2026-07-25-flume-descends.md`.
+- **Audit fixes (2026-07-25, same branch).** Four findings, three of them from probing rather than
+  reading. (1) **Rails crossed the track centre line at every tile** — `drawRail` took its
+  perpendicular from each half's *signed* direction, which flips on a straight run (d2 = −d1), so
+  the same rail was drawn on both sides of centre and every tile was an X. Geometry pulled out into
+  a pure `railPoints(cx, cy, dirs, side)` keyed off the *traversal* through the tile: straight runs
+  return two collinear points, bends return a quadratic through the point where the two rail lines
+  meet. (2) **Three docks on one run spawned two wagons and mis-paired them** (`1->2 2->3 3->2`) —
+  a dock whose traced mate is already owned now yields; the test asserts *reciprocal pairing*, which
+  holds whichever pair is claimed first. (3) **The flume destroyed logs tipped into a head-gate with
+  no run** — `tickFlume` treated `path.length < 2` as "arrived" and deleted the item; it now drops
+  to the ground at the gate. (4) **`status.ts` re-typed caps that live in `constants.ts`** (8/4/12,
+  `>= 20`) — now imported, with a test that tweaks the constant and asserts the badge follows, so
+  the balance pass can't silently desync the "output full" badge. New `Scene.railPointsAt()`
+  instrument hook + verifier check (`offsets 0.140..0.140`): a visual bug the owner could see and
+  the suite could not is exactly the gap ADR 002 exists to close. 29 Vitest + verifier green.
+  See `docs/work/2026-07-25-audit-fixes.md`.
+- **Open audit items (not yet fixed):** routeless rail docks still advertise as drop targets; the
+  wagon loads in fixed `ALL_RESOURCES` order so waiting logs starve everything behind them; the HUD
+  rewrites bank chips / letter / info-panel `innerHTML` every frame; status badges scale with zoom;
+  `RESOURCE_GLYPH` mixes an emoji with geometric glyphs; rail pricing (14 iron for a short route vs
+  a 10-iron unlock) wants a look in the balance pass.
 - **Deferred fast-follow:** true low-res pixel-upscale (integer zoom, literal plate crispness),
   sound/juice. Known sim nits reported in the 2026-07-23 session review (flume-without-trestles
   destroys logs; status.ts caps duplicated from constants; HUD rebuilds DOM every frame).

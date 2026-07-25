@@ -145,6 +145,35 @@ try {
   check('plateway hauls a lot between docks in-browser', hauled.arrived === 5, `arrived=${hauled.arrived}`);
   check('exactly one wagon per route', hauled.wagons === 1, `wagons=${hauled.wagons}`);
 
+  // Rails must not cross the track's centre line. A per-direction perpendicular flips sign on a
+  // straight run and drew each rail on both sides of centre, turning every tile into an X.
+  const straight = await page.evaluate(async () => {
+    const { getGame, actions, rail, scene } = window.__fw;
+    actions.init(1);
+    const g = getGame();
+    const mk = (kind, tx, ty, id) => ({ id, kind, tx, ty, input: {}, output: {}, progress: 0 });
+    g.buildings.push(mk('railDock', 4, 26, 1));
+    for (let i = 5; i <= 12; i++) g.buildings.push(mk('rail', i, 26, 100 + i));
+    g.buildings.push(mk('railDock', 13, 26, 2));
+    rail.recomputeRailRoutes(g);
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    // For an east-west run, every point of a given rail must stay on one side of y = ty + 0.5.
+    const offsets = [];
+    for (let tx = 5; tx <= 12; tx++) {
+      const pts = scene.railPointsAt(tx, 26, 1);
+      if (!pts) return { bad: `no rail at ${tx}` };
+      for (const p of pts) offsets.push(p.y - 26.5);
+    }
+    const min = Math.min(...offsets);
+    const max = Math.max(...offsets);
+    return { min, max, crosses: min < 0 && max > 0, spread: max - min };
+  });
+  check(
+    'rails run straight — never crossing the track centre line',
+    straight.crosses === false && straight.spread < 1e-6,
+    `offsets ${straight.min?.toFixed(3)}..${straight.max?.toFixed(3)}`,
+  );
+
   // The flume descends on a steady grade instead of falling off the terraces with the ground.
   const deck = await page.evaluate(async () => {
     const { getGame, actions, movers, scene } = window.__fw;
