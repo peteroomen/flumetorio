@@ -63,10 +63,11 @@ export function terrainColor(terrain: Terrain, height: number): number {
   switch (terrain) {
     case 'water':
       return COLORS.water1;
-    case 'forest':
-      return COLORS.grass;
     case 'rock':
       return height >= 2 ? COLORS.rockT : COLORS.rock;
+    // Forest shares the grass ramp *including its height band* — keying it to a single colour
+    // two-toned every wooded tile against its neighbours and put the lattice straight back.
+    case 'forest':
     case 'grass':
     default:
       if (height >= 2) return COLORS.grassT;
@@ -79,6 +80,39 @@ export function terrainColor(terrain: Terrain, height: number): number {
 export function tileNoise(tx: number, ty: number): number {
   return ((tx * 73 + ty * 151 + tx * ty * 13) % 17) / 17;
 }
+
+// Stable integer hash -> [0,1). Cosmetic-only, but deliberately *not* Math.random: the terrain
+// layer is cached and redrawn on demand, so anything scattered on it must land identically every
+// rebuild or the ground shimmers.
+export function hash01(x: number, y: number, salt = 0): number {
+  let h = Math.imul(x | 0, 374761393) ^ Math.imul(y | 0, 668265263) ^ Math.imul(salt | 0, 2246822519);
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+
+// Smoothed value noise over a lattice of `scale` tiles — large-scale ground patchiness, so the
+// floor varies over metres rather than per tile (which just reads as noise).
+export function patchNoise(tx: number, ty: number, scale: number, salt = 0): number {
+  const x = tx / scale;
+  const y = ty / scale;
+  const x0 = Math.floor(x);
+  const y0 = Math.floor(y);
+  const fx = x - x0;
+  const fy = y - y0;
+  const sx = fx * fx * (3 - 2 * fx);
+  const sy = fy * fy * (3 - 2 * fy);
+  const n0 = hash01(x0, y0, salt) * (1 - sx) + hash01(x0 + 1, y0, salt) * sx;
+  const n1 = hash01(x0, y0 + 1, salt) * (1 - sx) + hash01(x0 + 1, y0 + 1, salt) * sx;
+  return n0 * (1 - sy) + n1 * sy;
+}
+
+// ---- the sun ----
+// Derived from the kit's own massing, not invented: `box()` fills the +x wall at 0.55 and the +y
+// wall at 0.75, so the light is opposite +x with a smaller -y component. Every shadow in the
+// renderer sweeps along this vector (world tiles), scaled by the caster's height in levels.
+export const SUN = { x: 1, y: 0.28 } as const;
+export const SHADOW_PER_LEVEL = 0.22; // tiles of shadow per height-level of caster
+export const SHADOW_ALPHA = 0.2;
 
 // Multiply a colour's channels by `f` (clamped) — the plate's `sh()`. f>1 brightens.
 export function shade(color: number, f: number): number {

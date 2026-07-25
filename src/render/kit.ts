@@ -4,7 +4,58 @@
 
 import type { Graphics } from 'pixi.js';
 import { project, TILE_HALF_H, TILE_HALF_W, type Pt } from './iso';
-import { COLORS, shade } from './palette';
+import { COLORS, SHADOW_ALPHA, SHADOW_PER_LEVEL, shade, SUN } from './palette';
+
+// ---- shadows ----
+// A box's cast shadow is the Minkowski sum of its footprint with the light vector. For a sweep
+// with both components positive that's a hexagon — drawn as ONE polygon so the overlap between
+// base and offset can't double-darken.
+export function castShadow(
+  g: Graphics,
+  wx: number,
+  wy: number,
+  h: number,
+  w: number,
+  d: number,
+  hz: number,
+  alpha = SHADOW_ALPHA,
+): void {
+  const len = hz * SHADOW_PER_LEVEL;
+  const ox = SUN.x * len;
+  const oy = SUN.y * len;
+  const P = (x: number, y: number) => project(x, y, h);
+  g.poly(
+    flat([
+      P(wx, wy),
+      P(wx + w, wy),
+      P(wx + w + ox, wy + oy),
+      P(wx + w + ox, wy + d + oy),
+      P(wx + ox, wy + d + oy),
+      P(wx, wy + d),
+    ]),
+  ).fill({ color: 0x000000, alpha });
+}
+
+// Cheaper shadow for round/irregular casters (flora, ore, the player): an ellipse stretched along
+// the sun vector. `hz` is the caster's height in levels; `r` its ground radius in tiles.
+// Centred on HALF the sweep, not the whole of it — a fully displaced blob detaches from the trunk
+// and reads as a separate dark object lying on the ground.
+export function blobShadow(
+  g: Graphics,
+  wx: number,
+  wy: number,
+  h: number,
+  r: number,
+  hz: number,
+  alpha = SHADOW_ALPHA,
+): void {
+  const len = hz * SHADOW_PER_LEVEL;
+  const c = project(wx + SUN.x * len * 0.5, wy + SUN.y * len * 0.5, h);
+  g.ellipse(c.x, c.y, (r + len * 0.5) * TILE_HALF_W, (r + len * 0.14) * TILE_HALF_H).fill({
+    color: 0x000000,
+    alpha,
+  });
+}
 
 export type Face = 'left' | 'right'; // left = the +y wall (screen lower-left), right = the +x wall
 
@@ -232,18 +283,22 @@ export interface Pt3 {
 }
 
 // A sagging line-shaft / belt between two screen points, with travelling pulse dots.
+// The sagging curve a shaft hangs on. Exported so supports can be planted exactly on it.
+export function shaftPoint(p0: Pt, p1: Pt, f: number): Pt {
+  const mx = (p0.x + p1.x) / 2;
+  const my = (p0.y + p1.y) / 2 + 6; // sag
+  const omf = 1 - f;
+  return {
+    x: omf * omf * p0.x + 2 * omf * f * mx + f * f * p1.x,
+    y: omf * omf * p0.y + 2 * omf * f * my + f * f * p1.y,
+  };
+}
+
 export function shaft(g: Graphics, p0: Pt, p1: Pt, tSec: number, turning: boolean): void {
   const mx = (p0.x + p1.x) / 2;
   const my = (p0.y + p1.y) / 2 + 6; // sag
   const pts: Pt[] = [];
-  for (let i = 0; i <= 8; i++) {
-    const f = i / 8;
-    const omf = 1 - f;
-    pts.push({
-      x: omf * omf * p0.x + 2 * omf * f * mx + f * f * p1.x,
-      y: omf * omf * p0.y + 2 * omf * f * my + f * f * p1.y,
-    });
-  }
+  for (let i = 0; i <= 8; i++) pts.push(shaftPoint(p0, p1, i / 8));
   g.moveTo(pts[0].x, pts[0].y);
   for (const p of pts.slice(1)) g.lineTo(p.x, p.y);
   g.stroke({ width: 3, color: COLORS.brassD, alpha: 0.9 });

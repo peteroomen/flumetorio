@@ -4,7 +4,7 @@
 // Terrain is cached; everything that stands on it joins one back-to-front dynamic pass.
 
 import { Application, Container, Graphics, Text, TextStyle } from 'pixi.js';
-import type { Building, BuildingKind, GameState } from '@/lib/sim/types';
+import type { Building, BuildingKind, GameState, Terrain } from '@/lib/sim/types';
 import { bandHeight, heightAt, idx, inBounds } from '@/lib/sim/world';
 import { INCLINE_INTERVAL_MS, MAP_H, MAP_W, WATERWHEEL_POWER_RADIUS } from '@/lib/sim/constants';
 import { placementError, waterNeighbour } from '@/lib/sim/buildings';
@@ -14,7 +14,9 @@ import type { ViewState } from '@/ui/view';
 import { drawKey, HEIGHT_STEP, pointInQuad, project, TILE_HALF_H, TILE_HALF_W, tileDiamond, type Pt } from './iso';
 import {
   barrel,
+  blobShadow,
   box,
+  castShadow,
   chimney,
   faceCog,
   faceWheel,
@@ -23,11 +25,54 @@ import {
   plankStack,
   roof,
   shaft,
+  shaftPoint,
   smoke,
   trestleBent,
   type Face,
 } from './kit';
-import { COLORS, RESOURCE_COLORS, shade, terrainColor, tileNoise } from './palette';
+import {
+  COLORS,
+  hash01,
+  patchNoise,
+  RESOURCE_COLORS,
+  shade,
+  terrainColor,
+  tileNoise,
+} from './palette';
+
+// Approximate massing height (in levels) per building kind — drives cast-shadow length only.
+const SHADOW_HZ: Record<BuildingKind, number> = {
+  stockpile: 0.3,
+  pitsaw: 0.55,
+  waterwheel: 1.5,
+  sawmill: 1.5,
+  flume: 0.6,
+  flumeHead: 0.9,
+  clamp: 0.8,
+  incline: 0.4,
+  furnace: 2.4,
+  blacksmith: 1.5,
+};
+
+// Footprint each kind casts from, as [inset, size] in tiles — matches the massing in drawBuilding.
+const SHADOW_FOOT: Partial<Record<BuildingKind, [number, number]>> = {
+  stockpile: [0.08, 0.84],
+  sawmill: [0.06, 0.88],
+  blacksmith: [0.08, 0.84],
+  clamp: [0.12, 0.76],
+  furnace: [0.14, 0.72],
+  waterwheel: [0.2, 0.6],
+  pitsaw: [0.2, 0.6],
+};
+
+// A tree/stump's off-centre stand within its tile. Shared by the canopy and the stump it leaves,
+// so felling doesn't teleport the trunk.
+function floraOffset(tx: number, ty: number): { jx: number; jy: number } {
+  return {
+    jx: 0.5 + (hash01(tx, ty, 7) - 0.5) * 0.56,
+    jy: 0.5 + (hash01(tx, ty, 13) - 0.5) * 0.56,
+  };
+}
 
 const OVERLAY_STYLE = new TextStyle({ fill: 0xcfe8ff, fontSize: 11, fontFamily: 'monospace' });
 const PROMPT_STYLE = new TextStyle({
@@ -277,15 +322,73 @@ export class Scene {
         }
       }
 
-      // Top face + block-earth dither.
-      g.poly(flat(tileDiamond(tx, ty, h))).fill({ color: top });
-      const n = tileNoise(tx, ty);
-      const c0 = project(tx + 0.5, ty + 0.5, h);
-      const spk = shade(top, 0.86);
-      g.rect(c0.x - 10 + n * 14, c0.y - 4 + n * 6, 2, 2).fill({ color: spk });
-      g.rect(c0.x + 4 - n * 10, c0.y + 2 - n * 5, 2, 2).fill({ color: spk });
-      if (n > 0.6) g.rect(c0.x - 2 + n * 6, c0.y - 6 + n * 4, 2, 2).fill({ color: shade(top, 1.1) });
-      g.poly(flat(tileDiamond(tx, ty, h))).stroke({ width: 1, color: shade(top, 0.78), alpha: 0.35 });
+      // Top face. Two octaves of large-scale value noise, so the ground varies over several tiles
+      // instead of per tile — and NO per-tile outline, which read as graph paper on open ground.
+      const patch = patchNoise(tx, ty, 5.5) * 0.62 + patchNoise(tx, ty, 2.1, 17) * 0.38;
+      const face = shade(top, 0.9 + patch * 0.19);
+      g.poly(flat(tileDiamond(tx, ty, h))).fill({ color: face });
+      this.drawGroundClutter(g, tx, ty, h, tile.terrain, face);
+    }
+  }
+
+  // Scattered ground detail, hash-keyed so it lands identically on every cached rebuild.
+  private drawGroundClutter(
+    g: Graphics,
+    tx: number,
+    ty: number,
+    h: number,
+    terrain: Terrain,
+    face: number,
+  ): void {
+    const c = project(tx + 0.5, ty + 0.5, h);
+    const grassy = terrain === 'grass' || terrain === 'forest';
+
+    // Cart ruts: rolled per row and drawn edge-to-edge, so consecutive tiles form one long track
+    // worn across the works floor.
+    if (!grassy && hash01(0, ty, 31) > 0.76 && hash01(tx, ty, 32) > 0.22) {
+      for (const off of [-0.16, 0.1]) {
+        const a = project(tx, ty + 0.5 + off, h);
+        const b = project(tx + 1, ty + 0.5 + off, h);
+        g.moveTo(a.x, a.y).lineTo(b.x, b.y).stroke({ width: 1, color: shade(face, 0.88), alpha: 0.55 });
+      }
+    }
+
+    const roll = hash01(tx, ty, 3);
+    if (grassy) {
+      // tufts of grass, leaning with the light
+      const n = roll > 0.72 ? 3 : roll > 0.4 ? 1 : 0;
+      for (let i = 0; i < n; i++) {
+        const ox = (hash01(tx, ty, 40 + i) - 0.5) * 22;
+        const oy = (hash01(tx, ty, 60 + i) - 0.5) * 11;
+        const tall = 2 + hash01(tx, ty, 80 + i) * 3;
+        // one blade, leaning with the light — a symmetric pair reads as a printed 'v', not grass
+        const lean = (hash01(tx, ty, 95 + i) - 0.3) * 2.6;
+        const col = shade(face, 0.88 + hash01(tx, ty, 90 + i) * 0.2);
+        g.moveTo(c.x + ox, c.y + oy).lineTo(c.x + ox + lean, c.y + oy - tall).stroke({ width: 1, color: col });
+      }
+      return;
+    }
+
+    // Works floor / rock: pebbles, the odd scree cluster, and rare standing water.
+    if (roll > 0.965) {
+      // standing water — damp patch rather than a hole; a dark fill reads as a pit from above
+      const ox = (hash01(tx, ty, 11) - 0.5) * 14;
+      const oy = (hash01(tx, ty, 12) - 0.5) * 7;
+      const r = 5 + hash01(tx, ty, 14) * 3;
+      g.ellipse(c.x + ox, c.y + oy, r, r * 0.5).fill({ color: shade(face, 0.8) });
+      g.ellipse(c.x + ox, c.y + oy, r, r * 0.5).stroke({ width: 1, color: shade(face, 1.12), alpha: 0.35 });
+      return;
+    }
+    const pebbles = roll > 0.66 ? 5 : roll > 0.3 ? 2 : 1;
+    for (let i = 0; i < pebbles; i++) {
+      const ox = (hash01(tx, ty, 100 + i) - 0.5) * 26;
+      const oy = (hash01(tx, ty, 120 + i) - 0.5) * 13;
+      const r = 1 + hash01(tx, ty, 140 + i) * 1.8;
+      // flat chips, not domes — a lit cap on every one turned the floor into rivets
+      g.ellipse(c.x + ox, c.y + oy, r, r * 0.45).fill({ color: shade(face, 0.82) });
+      if (hash01(tx, ty, 160 + i) > 0.6) {
+        g.ellipse(c.x + ox, c.y + oy - r * 0.25, r * 0.6, r * 0.22).fill({ color: shade(face, 1.1) });
+      }
     }
   }
 
@@ -345,6 +448,7 @@ export class Scene {
         key: gi.tx + gi.ty + 1.05,
         draw: () => {
           const p = project(gi.tx + 0.5, gi.ty + 0.5, h);
+          blobShadow(g, gi.tx + 0.5, gi.ty + 0.5, h, 0.12, 0.3, 0.2);
           const stack = Math.min(3, gi.count);
           for (let i = 0; i < stack; i++) {
             g.rect(p.x - 4 + i, p.y - 2 - i * 3, 8, 3)
@@ -431,17 +535,29 @@ export class Scene {
   // ---------------- flora / ore ----------------
   private drawTree(g: Graphics, tiles: GameState['tiles'], tx: number, ty: number, hOverride?: number): void {
     const h = hOverride ?? heightAt(tiles, tx, ty);
-    const c = project(tx + 0.5, ty + 0.5, h);
-    const n = tileNoise(tx, ty);
-    const s = 0.85 + n * 0.35;
-    const dark = n > 0.5 ? 0x35502a : 0x3a5230;
-    const lit = n > 0.5 ? 0x4c6b38 : 0x527440;
-    g.ellipse(c.x, c.y + 1, 9 * s, 4 * s).fill({ color: 0x000000, alpha: 0.18 });
+    const { jx, jy } = floraOffset(tx, ty);
+    const c = project(tx + jx, ty + jy, h);
+    const s = 0.82 + hash01(tx, ty, 21) * 0.4;
+    // Three silhouettes and a four-entry green ramp — a wood, not a stamp repeated on a lattice.
+    const variant = Math.floor(hash01(tx, ty, 5) * 3);
+    const ramp = [
+      [0x35502a, 0x4c6b38],
+      [0x3a5230, 0x527440],
+      [0x2f4726, 0x446033],
+      [0x40593a, 0x5a7c49],
+    ][Math.floor(hash01(tx, ty, 9) * 4)];
+    const [dark, lit] = ramp;
+    const tiers = variant === 1 ? 4 : variant === 2 ? 2 : 3;
+    const spread = variant === 1 ? 10.5 : variant === 2 ? 15 : 13;
+    const step = variant === 1 ? 8 : variant === 2 ? 11 : 9;
+    const hz = ((14 + (tiers - 1) * step) * s) / HEIGHT_STEP;
+
+    blobShadow(g, tx + jx, ty + jy, h, 0.16 * s, hz, 0.2);
     g.rect(c.x - 2, c.y - 8 * s, 4, 9 * s).fill({ color: COLORS.woodD });
-    for (let i = 0; i < 3; i++) {
-      const w = (13 - i * 3.4) * s;
-      const yTop = c.y - (14 + i * 9) * s;
-      const yBot = c.y - (2 + i * 9) * s;
+    for (let i = 0; i < tiers; i++) {
+      const w = (spread - i * (spread * 0.26)) * s;
+      const yTop = c.y - (14 + i * step) * s;
+      const yBot = c.y - (2 + i * step) * s;
       g.poly([c.x, yTop, c.x - w, yBot, c.x, yBot]).fill({ color: dark });
       g.poly([c.x, yTop, c.x + w, yBot, c.x, yBot]).fill({ color: lit });
     }
@@ -449,7 +565,9 @@ export class Scene {
 
   private drawStump(g: Graphics, tiles: GameState['tiles'], tx: number, ty: number): void {
     const h = heightAt(tiles, tx, ty);
-    const c = project(tx + 0.5, ty + 0.5, h);
+    const { jx, jy } = floraOffset(tx, ty); // same stand the trunk occupied
+    const c = project(tx + jx, ty + jy, h);
+    blobShadow(g, tx + jx, ty + jy, h, 0.1, 0.2, 0.18);
     g.ellipse(c.x, c.y - 1, 4, 2).fill({ color: COLORS.wood });
     g.rect(c.x - 4, c.y - 4, 8, 4).fill({ color: COLORS.woodD });
     g.ellipse(c.x, c.y - 4, 4, 2).fill({ color: COLORS.woodL });
@@ -458,7 +576,10 @@ export class Scene {
 
   private drawOre(g: Graphics, tiles: GameState['tiles'], tx: number, ty: number, remaining: number): void {
     const h = heightAt(tiles, tx, ty);
-    const c = project(tx + 0.5, ty + 0.5, h);
+    const jx = 0.5 + (hash01(tx, ty, 23) - 0.5) * 0.4;
+    const jy = 0.5 + (hash01(tx, ty, 29) - 0.5) * 0.4;
+    const c = project(tx + jx, ty + jy, h);
+    blobShadow(g, tx + jx, ty + jy, h, 0.22, 0.35, 0.2);
     const rocks =
       remaining > 3
         ? [
@@ -488,6 +609,10 @@ export class Scene {
     const x = b.tx;
     const y = b.ty;
     const c = project(x + 0.5, y + 0.5, h);
+    // Ground the massing before drawing it. Kinds without a footprint entry (flume, incline) are
+    // open trestlework — a solid slab under them would read as a floor, not a shadow.
+    const foot = SHADOW_FOOT[b.kind];
+    if (foot) castShadow(g, x + foot[0], y + foot[0], h, foot[1], foot[1], SHADOW_HZ[b.kind]);
     switch (b.kind) {
       case 'stockpile': {
         box(g, x + 0.08, y + 0.08, h, 0.84, 0.84, 0.07, COLORS.wood);
@@ -822,7 +947,7 @@ export class Scene {
     sx /= sl;
     sy /= sl;
 
-    g.ellipse(c.x, c.y + 1, 7, 3.5).fill({ color: 0x000000, alpha: 0.25 });
+    blobShadow(g, p.x, p.y, h, 0.11, 1.05, 0.25);
     // legs
     g.rect(c.x - 3.5, c.y - 6, 3, 6).fill({ color: 0x2e2a26 });
     g.rect(c.x + 0.5, c.y - 6, 3, 6).fill({ color: 0x2e2a26 });
@@ -877,6 +1002,20 @@ export class Scene {
         if (Math.hypot(m.tx - w.tx, m.ty - w.ty) > WATERWHEEL_POWER_RADIUS) continue;
         if (!isPoweredAt(state, m.tx, m.ty)) continue;
         const mc = project(m.tx + 0.5, m.ty + 0.5, heightAt(tiles, m.tx, m.ty) + 1.0);
+        // Posts carry the shaft over the ground it crosses — without them a line shaft reads as a
+        // gold line floating across bare earth.
+        for (const f of [0.34, 0.66]) {
+          const wx = w.tx + 0.5 + (m.tx - w.tx) * f;
+          const wy = w.ty + 0.5 + (m.ty - w.ty) * f;
+          const gh = heightAt(tiles, Math.floor(wx), Math.floor(wy));
+          const top = shaftPoint(wc, mc, f);
+          const foot = project(wx, wy, gh);
+          if (foot.y - top.y < 4) continue; // shaft already sits on the ground here
+          blobShadow(g, wx, wy, gh, 0.07, (foot.y - top.y) / HEIGHT_STEP, 0.18);
+          g.moveTo(top.x, top.y).lineTo(foot.x, foot.y).stroke({ width: 2, color: COLORS.woodD });
+          g.moveTo(top.x - 4, top.y + 3).lineTo(foot.x, foot.y).stroke({ width: 1, color: COLORS.wood });
+          g.moveTo(top.x + 4, top.y + 3).lineTo(foot.x, foot.y).stroke({ width: 1, color: COLORS.wood });
+        }
         shaft(g, wc, mc, t, true);
       }
     }
@@ -989,6 +1128,23 @@ export class Scene {
     const { tx, ty } = view.hoverTile;
     if (!inBounds(tx, ty)) return;
     const h = heightAt(state.tiles, tx, ty);
+    // A placement lattice local to the cursor. The world carries no permanent grid any more, so
+    // the grid appears only while it's information — and only where you're looking.
+    const R = 6;
+    for (let dy = -R; dy <= R; dy++) {
+      for (let dx = -R; dx <= R; dx++) {
+        const gx = tx + dx;
+        const gy = ty + dy;
+        if (!inBounds(gx, gy)) continue;
+        const d = Math.hypot(dx, dy);
+        if (d > R) continue;
+        g.poly(flat(tileDiamond(gx, gy, heightAt(state.tiles, gx, gy)))).stroke({
+          width: 1,
+          color: COLORS.text,
+          alpha: 0.16 * (1 - d / R),
+        });
+      }
+    }
     const err = placementError(state, view.buildKind, tx, ty);
     const color = err ? COLORS.ghostBad : COLORS.ghostOk;
     g.poly(flat(tileDiamond(tx, ty, h)))

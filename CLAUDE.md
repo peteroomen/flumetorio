@@ -267,8 +267,26 @@ Date: YYYY-MM-DD · Status: Accepted
   trough, head-gate, incline rails+cart, clamp mound). One sorted back-to-front dynamic pass —
   the player walks behind buildings correctly. Render-only; sim untouched. 19 Vitest + verifier
   green. See `docs/work/2026-07-23-dimetric-visual-pass.md`.
+- **Ground, flora, and light (2026-07-25, branch `claude/game-visual-improvements-4liquw`, on top of
+  the dimetric pass).** Three fixes from a screenshot review of the pass, all one problem — the world
+  read as *tiles with objects on them*: (1) dropped the per-tile diamond outline (graph paper on the
+  works floor) for two-octave `patchNoise` value variation plus authored clutter (pebbles, scree,
+  tufts, damp patches, cart ruts that run edge-to-edge along a row); the placement grid now appears
+  only in build mode, local to the cursor. Also folded `forest` into the grass *height* ramp — keying
+  it to one colour two-toned every wooded tile and put the lattice straight back. (2) Trees/stumps/ore
+  stand off-centre via a shared `floraOffset` (so felling doesn't move the trunk), with three canopy
+  silhouettes and a four-entry green ramp. (3) One documented sun (`SUN` in `palette.ts`, derived
+  from `kit.box()`'s own face shading rather than invented), driving `castShadow` (footprint-sweep
+  hexagon, one polygon so alpha can't double-darken) and `blobShadow` for every caster — buildings,
+  flora, ore, player, ground items — plus trestle posts under the line shaft. Render-only. 19 Vitest
+  + verifier green. See `docs/work/2026-07-25-ground-flora-light.md`.
 - **Deferred fast-follow:** true low-res pixel-upscale (integer zoom, literal plate crispness),
   sound/juice. Known sim nits reported in the 2026-07-23 session review (flume-without-trestles
   destroys logs; status.ts caps duplicated from constants; HUD rebuilds DOM every frame).
+  Open visual items from the same review: per-building-family material identity (verdigris/copper/
+  brick are defined but unused), water desaturation, atmospheric depth + the sky-wedge corner,
+  status badges scaling with zoom, waterfall foam, terrace-base AO, world-gen band wobble (the
+  terraces are still perfectly straight diagonals — `bandHeight` keys purely off the row), and the
+  emoji/glyph mismatch in `RESOURCE_GLYPH`.
 - **Next:** balance/feel pass after live play (constants in `src/lib/sim/constants.ts`), the pixel
   fast-follow, then post-MVP arcs (demand-pull town, steam, rail, aqueducts) per `docs/ROADMAP.md`.
