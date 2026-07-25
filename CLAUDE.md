@@ -329,6 +329,18 @@ Date: YYYY-MM-DD · Status: Accepted
   at 1×), sleepers, iron edge-rails sweeping through corners as real quarter-curves, a dock with a
   gas lamp, and a wagon built in *world* space from `kit.box()` with the lot visible in the bed.
   26 Vitest + verifier (2 new in-browser rail checks) green. See `docs/work/2026-07-25-first-rails.md`.
+- **The flume descends on trestles (2026-07-25, same branch).** `drawFlume` sampled terrain height
+  per tile, so the trough *was* the terrain offset upward — it fell a whole terrace in one tile
+  wherever the ground did, and the trestles never grew past a fixed 0.28 stub. The flume now has its
+  own **deck profile**: descend no faster than `grade = max over i of (th[i]-th[n])/(n-i)` per tile,
+  never below terrain. Taking the worst *suffix* grade rather than the head-to-tail average is the
+  trick — the run leaves the head already shallow enough to clear the final cliff, so no single step
+  makes up the difference (worst step 0.65 → 0.25 on the test run, still landing exactly on the
+  tail). Trough halves slope to the mid-edge elevation shared with each neighbour, trestle legs are
+  sized `deck − terrain` so they grow under flying spans, logs ride the deck, and the head-gate's
+  posts stand on the ground carrying it. Render-only. New `Scene.flumeDeckAt()` + 3 verifier checks
+  read the profile as numbers (ADR 002) — the "worst flume step < ground drop" check is the
+  regression guard. See `docs/work/2026-07-25-flume-descends.md`.
 - **Deferred fast-follow:** true low-res pixel-upscale (integer zoom, literal plate crispness),
   sound/juice. Known sim nits reported in the 2026-07-23 session review (flume-without-trestles
   destroys logs; status.ts caps duplicated from constants; HUD rebuilds DOM every frame).

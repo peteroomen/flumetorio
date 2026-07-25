@@ -74,6 +74,9 @@ const SHADOW_FOOT: Partial<Record<BuildingKind, [number, number, number, number]
   railDock: [0.1, 0.1, 0.8, 0.8],
 };
 
+// How far the flume's deck rides above whatever carries it.
+const FLUME_DECK_LIFT = 0.3;
+
 // A tree/stump's off-centre stand within its tile. Shared by the canopy and the stump it leaves,
 // so felling doesn't teleport the trunk.
 function floraOffset(tx: number, ty: number): { jx: number; jy: number } {
@@ -166,6 +169,7 @@ export class Scene {
   private overlayLayer = new Container();
   private overlayPool: Text[] = [];
   private promptText = new Text({ text: '', style: PROMPT_STYLE });
+  private flumeDeck = new Map<number, number>();
   private walkPhase = 0;
   private lastPx = 0;
   private lastPy = 0;
@@ -531,6 +535,7 @@ export class Scene {
       }
     }
 
+    this.flumeDeck = this.computeFlumeDeck(state);
     const flumeConns = this.computeFlumeConns(state);
     const railConns = this.computeRailConns(state);
 
@@ -590,9 +595,10 @@ export class Scene {
       const bp = head.path[i + 1];
       const wx = a.tx + (bp.tx - a.tx) * frac + 0.5;
       const wy = a.ty + (bp.ty - a.ty) * frac + 0.5;
-      const ha = heightAt(tiles, a.tx, a.ty);
-      const hb = heightAt(tiles, bp.tx, bp.ty);
-      const hh = ha + (hb - ha) * frac + 0.34; // riding the trough
+      // riding the trough, on the flume's own deck — not on the ground under it
+      const da = this.flumeDeck.get(idx(a.tx, a.ty)) ?? heightAt(tiles, a.tx, a.ty) + FLUME_DECK_LIFT;
+      const db = this.flumeDeck.get(idx(bp.tx, bp.ty)) ?? heightAt(tiles, bp.tx, bp.ty) + FLUME_DECK_LIFT;
+      const hh = da + (db - da) * frac + 0.06;
       entries.push({
         key: wx + wy + 0.05, // just after its tile's trough, so it rides on the water
         draw: () => {
@@ -654,6 +660,54 @@ export class Scene {
       if (c.ins.length === 0) c.ins.push({ dx: 1, dy: 0 }, { dx: -1, dy: 0 });
     }
     return conns;
+  }
+
+  // The flume's own elevation profile, per tile, in height-levels (absolute deck height).
+  //
+  // A flume is trestlework, not a groundsheet: it leaves the head-gate on a steady grade and the
+  // ground falls away beneath it. Sampling terrain per tile made the trough drop a whole terrace
+  // in one tile wherever the land did. So each run gets a straight line from head to tail, raised
+  // wherever terrain would poke through it:
+  //
+  //   grade   = max over i of (th[i] - th[n]) / (n - i)   — the gentlest grade that still lands
+  //   deck[i] = max(th[i], deck[i-1] - grade) + FLUME_DECK_LIFT
+  //
+  // i.e. descend no faster than `grade` per tile, but never sink into the ground. Both terms are
+  // non-increasing (the sim only extends a run downhill or level), so the deck is too — it can
+  // never run uphill. Taking the *worst* suffix grade rather than the head-to-tail average is
+  // what stops a mid-run plateau forcing a late plunge: the run leaves the head already shallow
+  // enough to clear the last cliff, so no single step has to make up the difference.
+  //
+  // The degenerate case stays honest: terrain that holds high until the final tile collapses the
+  // profile back onto terrain, because there is nowhere else for the flume to go.
+  private computeFlumeDeck(state: GameState): Map<number, number> {
+    const deck = new Map<number, number>();
+    const put = (tx: number, ty: number, z: number) => {
+      const k = idx(tx, ty);
+      const cur = deck.get(k);
+      if (cur === undefined || z > cur) deck.set(k, z);
+    };
+    for (const head of state.buildings) {
+      if (head.kind !== 'flumeHead' || !head.path || head.path.length === 0) continue;
+      const path = head.path;
+      const th = path.map((p) => heightAt(state.tiles, p.tx, p.ty));
+      const n = path.length - 1;
+      let grade = 0;
+      for (let i = 0; i < n; i++) grade = Math.max(grade, (th[i] - th[n]) / (n - i));
+      let z = th[0];
+      put(path[0].tx, path[0].ty, z + FLUME_DECK_LIFT);
+      for (let i = 1; i <= n; i++) {
+        z = Math.max(th[i], z - grade);
+        put(path[i].tx, path[i].ty, z + FLUME_DECK_LIFT);
+      }
+    }
+    // Track laid but not yet part of a run still needs somewhere to sit.
+    for (const b of state.buildings) {
+      if (b.kind !== 'flume' && b.kind !== 'flumeHead') continue;
+      if (deck.has(idx(b.tx, b.ty))) continue;
+      put(b.tx, b.ty, heightAt(state.tiles, b.tx, b.ty) + FLUME_DECK_LIFT);
+    }
+    return deck;
   }
 
   // Per-tile flume connectivity, derived from every head's computed path (fallback: adjacency).
@@ -1215,7 +1269,6 @@ export class Scene {
     const y = b.ty;
     const cx = x + 0.5;
     const cy = y + 0.5;
-    const lift = 0.28;
     const isHead = b.kind === 'flumeHead';
     const wn = isHead ? waterNeighbour(state.tiles, b.tx, b.ty) : null;
     const dirs: Array<{ d: Dir; out: boolean }> = [];
@@ -1227,26 +1280,43 @@ export class Scene {
     }
     if (dirs.length === 0) dirs.push({ d: { dx: 1, dy: 0 }, out: false }, { d: { dx: -1, dy: 0 }, out: false });
 
-    // trestle legs near each connected edge
+    // This tile's deck, and the elevation the trough hands over to each neighbour at their
+    // shared edge — halfway between the two decks, so consecutive pieces meet exactly.
+    const deck = this.flumeDeck.get(idx(x, y)) ?? h + FLUME_DECK_LIFT;
+    const edgeZ = (d: Dir): number => {
+      const nd = this.flumeDeck.get(idx(x + d.dx, y + d.dy));
+      return nd === undefined ? deck : (deck + nd) / 2;
+    };
+
+    // Trestles: legs from the ground up to the deck, so they GROW under a flying span instead of
+    // staying a fixed stub. A tall span gets a bent under its middle as well as its edges.
     for (const { d } of dirs) {
-      trestleBent(g, cx + d.dx * 0.34, cy + d.dy * 0.34, h, lift, d.dx, d.dy);
+      const f = 0.34;
+      const z = deck + (edgeZ(d) - deck) * (f / 0.5);
+      trestleBent(g, cx + d.dx * f, cy + d.dy * f, h, z - h, d.dx, d.dy);
     }
-    // trough halves: bed, water, rails
+    if (deck - h > 0.55) {
+      const d0 = dirs[0].d;
+      trestleBent(g, cx, cy, h, deck - h, d0.dx, d0.dy);
+    }
+
+    // trough halves: bed, water, rails — sloping from the tile centre out to each edge
     const half = (d: Dir, water: boolean, flowOut: boolean) => {
       const px = -d.dy;
       const py = d.dx;
-      const quad = (wHalf: number, z: number) =>
+      const ez = edgeZ(d);
+      const quad = (wHalf: number, dz: number) =>
         flat([
-          project(cx + px * wHalf, cy + py * wHalf, h + z),
-          project(cx + d.dx * 0.5 + px * wHalf, cy + d.dy * 0.5 + py * wHalf, h + z),
-          project(cx + d.dx * 0.5 - px * wHalf, cy + d.dy * 0.5 - py * wHalf, h + z),
-          project(cx - px * wHalf, cy - py * wHalf, h + z),
+          project(cx + px * wHalf, cy + py * wHalf, deck + dz),
+          project(cx + d.dx * 0.5 + px * wHalf, cy + d.dy * 0.5 + py * wHalf, ez + dz),
+          project(cx + d.dx * 0.5 - px * wHalf, cy + d.dy * 0.5 - py * wHalf, ez + dz),
+          project(cx - px * wHalf, cy - py * wHalf, deck + dz),
         ]);
-      g.poly(quad(0.19, lift)).fill({ color: COLORS.woodD });
-      if (water) g.poly(quad(0.12, lift + 0.04)).fill({ color: COLORS.water1 });
+      g.poly(quad(0.19, 0)).fill({ color: COLORS.woodD });
+      if (water) g.poly(quad(0.12, 0.04)).fill({ color: COLORS.water1 });
       for (const side of [1, -1]) {
-        const a = project(cx + px * 0.19 * side, cy + py * 0.19 * side, h + lift + 0.1);
-        const e = project(cx + d.dx * 0.5 + px * 0.19 * side, cy + d.dy * 0.5 + py * 0.19 * side, h + lift + 0.1);
+        const a = project(cx + px * 0.19 * side, cy + py * 0.19 * side, deck + 0.1);
+        const e = project(cx + d.dx * 0.5 + px * 0.19 * side, cy + d.dy * 0.5 + py * 0.19 * side, ez + 0.1);
         g.moveTo(a.x, a.y).lineTo(e.x, e.y).stroke({ width: 2, color: COLORS.wood });
       }
       if (water) {
@@ -1254,7 +1324,8 @@ export class Scene {
           const f0 = (t * 0.7 + i / 2 + tileNoise(x + i, y)) % 1;
           // in-halves flow edge→centre, out-halves centre→edge
           const off = flowOut ? 0.5 * f0 : 0.5 - 0.5 * f0;
-          const p = project(cx + d.dx * off, cy + d.dy * off, h + lift + 0.05);
+          const z = deck + (ez - deck) * (off / 0.5);
+          const p = project(cx + d.dx * off, cy + d.dy * off, z + 0.05);
           g.rect(p.x - 1, p.y - 1, 3, 1.5).fill({ color: COLORS.water2, alpha: 0.8 });
         }
       }
@@ -1269,21 +1340,23 @@ export class Scene {
       const gpy = gd.dx * 0.24;
       const gx = cx + gd.dx * 0.4;
       const gy = cy + gd.dy * 0.4;
-      box(g, gx + gpx - 0.04, gy + gpy - 0.04, h, 0.08, 0.08, lift + 0.5, COLORS.woodD);
-      box(g, gx - gpx - 0.04, gy - gpy - 0.04, h, 0.08, 0.08, lift + 0.5, COLORS.woodD);
-      if (gd.dx !== 0) box(g, gx - 0.04, gy - 0.28, h + lift + 0.42, 0.08, 0.56, 0.08, COLORS.wood);
-      else box(g, gx - 0.28, gy - 0.04, h + lift + 0.42, 0.56, 0.08, 0.08, COLORS.wood);
-      const gb = (s: number, z: number) => project(gx + gpx * s * 0.8, gy + gpy * s * 0.8, h + lift + z);
+      // posts stand on the ground and carry the deck, however high that has risen
+      const post = deck - h + 0.5;
+      box(g, gx + gpx - 0.04, gy + gpy - 0.04, h, 0.08, 0.08, post, COLORS.woodD);
+      box(g, gx - gpx - 0.04, gy - gpy - 0.04, h, 0.08, 0.08, post, COLORS.woodD);
+      if (gd.dx !== 0) box(g, gx - 0.04, gy - 0.28, deck + 0.42, 0.08, 0.56, 0.08, COLORS.wood);
+      else box(g, gx - 0.28, gy - 0.04, deck + 0.42, 0.56, 0.08, 0.08, COLORS.wood);
+      const gb = (s: number, z: number) => project(gx + gpx * s * 0.8, gy + gpy * s * 0.8, deck + z);
       // the gate board is bound in verdigris — it stands in the water all day
       g.poly(flat([gb(1, 0.08), gb(-1, 0.08), gb(-1, 0.3), gb(1, 0.3)])).fill({ color: COLORS.wood });
       g.poly(flat([gb(1, 0.08), gb(-1, 0.08), gb(-1, 0.3), gb(1, 0.3)])).stroke({ width: 1.5, color: COLORS.verdD, alpha: 0.9 });
       g.moveTo(gb(1, 0.19).x, gb(1, 0.19).y).lineTo(gb(-1, 0.19).x, gb(-1, 0.19).y).stroke({ width: 1, color: COLORS.verd });
-      const scr = project(gx, gy, h + lift + 0.58);
+      const scr = project(gx, gy, deck + 0.58);
       g.circle(scr.x, scr.y, 3).stroke({ width: 1.5, color: COLORS.brass });
       g.moveTo(scr.x - 3, scr.y).lineTo(scr.x + 3, scr.y).stroke({ width: 1, color: COLORS.brass });
       g.moveTo(scr.x, scr.y - 3).lineTo(scr.x, scr.y + 3).stroke({ width: 1, color: COLORS.brass });
       // churn where the water enters under the gate
-      const sp = project(gx, gy, h + lift + 0.05);
+      const sp = project(gx, gy, deck + 0.05);
       g.rect(sp.x - 3, sp.y, 6, 2).fill({ color: COLORS.water2, alpha: 0.5 + 0.3 * Math.sin(t * 8) });
     }
   }
@@ -1613,5 +1686,11 @@ export class Scene {
 
   get heightStep(): number {
     return HEIGHT_STEP;
+  }
+
+  // Instrument hook (ADR 002): the flume's deck elevation at a tile, so a verifier can read the
+  // descent as numbers rather than judging pixels. Populated by the last rendered frame.
+  flumeDeckAt(tx: number, ty: number): number | undefined {
+    return this.flumeDeck.get(idx(tx, ty));
   }
 }
