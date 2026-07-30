@@ -397,9 +397,23 @@ Date: YYYY-MM-DD · Status: Accepted
   See `docs/work/2026-07-25-balance-pass.md`.
 - **Note:** letters check the *current bank*, and the bank is also the build currency — buying a
   sawmill sets you back on the plank letter. Requirements are sized with that in mind.
-- **Next:** a live playtest of minutes 20–40 with a written verdict (the GDD fun-gate). The balance
-  numbers above are modelled, not felt; walking and hauling time is the other half of the pacing and
-  can only be judged in play.
+- **Engine checkpoint discharged (2026-07-30, ADR 004).** ADR 001 mandated a web-vs-Godot checkpoint
+  immediately after M5; this records it. **Web retained**, Godot deferred — not closed. Measured port
+  cost: sim 1,930 LOC ports *conceptually* (logic and tests translate, code does not run as-is),
+  render+UI 2,916 LOC rewritten, tests 634 LOC retranslated. Perf isn't the deciding factor (batch
+  semantics keep entity counts low, and the balance pass slowed everything further); Steam is the one
+  real pro-Godot argument and it's a packaging problem with two live answers. The decisive input —
+  the fun verdict — is still missing, so committing now would invert ADR 001's point. Four named
+  reversal criteria are in the ADR. **Sprite pipeline is explicitly decoupled:** SpriteCook-style
+  tools emit PNG sheets and work with Pixi as readily as Godot, but authored sprites need the
+  deferred integer-zoom pixel-upscale first, and trade `kit.ts`'s *rules* for baked *images* — its
+  own ADR when made.
+- **Next: the fun gate** — protocol, instrumentation and verdict template are in
+  `docs/work/2026-07-30-fun-gate-plan.md`. Note the blocker it surfaced: **M5's "Cadence
+  instrumentation v1" was never built** (it fell out when M5 was compressed into one PR), and the
+  question is specifically about cadence, which memory is worst at. So a pure append-only sim event
+  log + `dump()` export comes first, then the 40-minute session, then the written verdict. The
+  interpretation guide is agreed *before* playing so the result can't be rationalised afterwards.
 - **Deferred fast-follow:** true low-res pixel-upscale (integer zoom, literal plate crispness),
   sound/juice. Known sim nits reported in the 2026-07-23 session review (flume-without-trestles
   destroys logs; status.ts caps duplicated from constants; HUD rebuilds DOM every frame).
