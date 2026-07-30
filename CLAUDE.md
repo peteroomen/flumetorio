@@ -316,6 +316,104 @@ Date: YYYY-MM-DD · Status: Accepted
   vocabulary (recessed ballast bed so the route reads as a ribbon at 1×, real quarter-curves, brass
   throw levers at points, lot visible in the wagon bed). The gravity incline is treated as rail-zero
   and the family the plateway must match.
+- **The first rails shipped (2026-07-25, branch `claude/game-visual-improvements-4liquw`).** The
+  smallest slice from `docs/design/rail-pitch.md`: a **horse-drawn plateway**. New `railDock`
+  (terminus you load/collect at) + `rail` (track), routes traced from dock to dock, **exactly one
+  wagon per route** owned by the lower-id dock. `recomputeRailRoutes` is `recomputeFlumePaths` with
+  `===` instead of `<=` on height — and that one character *is* the design: water flows downhill, a
+  loaded wagon does neither. **Gradient refused at placement with a readable reason** ("A loaded
+  wagon cannot climb"), because that refusal is the whole desire chain: relief on the flat, then
+  HUNGER as goods pile at every rise → rope-worked inclines → steam. Costs iron, so it ties back to
+  the furnace the MVP taught you to run; unlocked by the blacksmith letter, so the post-MVP arc opens
+  as the reward for finishing the MVP one. Render: recessed ballast bed (the route reads as a ribbon
+  at 1×), sleepers, iron edge-rails sweeping through corners as real quarter-curves, a dock with a
+  gas lamp, and a wagon built in *world* space from `kit.box()` with the lot visible in the bed.
+  26 Vitest + verifier (2 new in-browser rail checks) green. See `docs/work/2026-07-25-first-rails.md`.
+- **The flume descends on trestles (2026-07-25, same branch).** `drawFlume` sampled terrain height
+  per tile, so the trough *was* the terrain offset upward — it fell a whole terrace in one tile
+  wherever the ground did, and the trestles never grew past a fixed 0.28 stub. The flume now has its
+  own **deck profile**: descend no faster than `grade = max over i of (th[i]-th[n])/(n-i)` per tile,
+  never below terrain. Taking the worst *suffix* grade rather than the head-to-tail average is the
+  trick — the run leaves the head already shallow enough to clear the final cliff, so no single step
+  makes up the difference (worst step 0.65 → 0.25 on the test run, still landing exactly on the
+  tail). Trough halves slope to the mid-edge elevation shared with each neighbour, trestle legs are
+  sized `deck − terrain` so they grow under flying spans, logs ride the deck, and the head-gate's
+  posts stand on the ground carrying it. Render-only. New `Scene.flumeDeckAt()` + 3 verifier checks
+  read the profile as numbers (ADR 002) — the "worst flume step < ground drop" check is the
+  regression guard. See `docs/work/2026-07-25-flume-descends.md`.
+- **Audit fixes (2026-07-25, same branch).** Four findings, three of them from probing rather than
+  reading. (1) **Rails crossed the track centre line at every tile** — `drawRail` took its
+  perpendicular from each half's *signed* direction, which flips on a straight run (d2 = −d1), so
+  the same rail was drawn on both sides of centre and every tile was an X. Geometry pulled out into
+  a pure `railPoints(cx, cy, dirs, side)` keyed off the *traversal* through the tile: straight runs
+  return two collinear points, bends return a quadratic through the point where the two rail lines
+  meet. (2) **Three docks on one run spawned two wagons and mis-paired them** (`1->2 2->3 3->2`) —
+  a dock whose traced mate is already owned now yields; the test asserts *reciprocal pairing*, which
+  holds whichever pair is claimed first. (3) **The flume destroyed logs tipped into a head-gate with
+  no run** — `tickFlume` treated `path.length < 2` as "arrived" and deleted the item; it now drops
+  to the ground at the gate. (4) **`status.ts` re-typed caps that live in `constants.ts`** (8/4/12,
+  `>= 20`) — now imported, with a test that tweaks the constant and asserts the badge follows, so
+  the balance pass can't silently desync the "output full" badge. New `Scene.railPointsAt()`
+  instrument hook + verifier check (`offsets 0.140..0.140`): a visual bug the owner could see and
+  the suite could not is exactly the gap ADR 002 exists to close. 29 Vitest + verifier green.
+  See `docs/work/2026-07-25-audit-fixes.md`.
+- **Audit batch two (2026-07-25, same branch).** Five items. The headline: a **routeless dock
+  stranded goods permanently** — it advertised as a drop target with no route, and `interact()` only
+  ever read a dock's `output`, so anything loaded was unrecoverable. Filed as a guidance nit; the
+  test showed it was the same class as the flume eating logs. Both halves fixed: a dock advertises
+  only once it has a route, **and** goods can always come back off a loading stage. Also: the wagon
+  **round-robins** cargo (`lastRes` on the wagon) instead of always scanning `ALL_RESOURCES` from
+  the top, so a refilled log pile can't monopolise a route; the HUD is content-keyed (bank chips,
+  letter and info panel were rewriting DOM 60×/s); **status badges hold a constant screen size**
+  (`1/zoom`, as the prompt already did — at 4× they were 64×48px); `RESOURCE_GLYPH`'s log is
+  geometric like the rest. See `docs/work/2026-07-25-audit-batch-two.md`.
+- **The terraces get a coastline (2026-07-25, same branch).** `bandHeight` keyed height purely off
+  the row, so every terrace boundary was a straight diagonal across the whole map — the last big
+  "sliced, not shaped" tell, and one no render work could fix. Now `bandHeight(tx, ty)`, with each
+  boundary offset by a bounded two-octave `bandEdgeShift(tx)` — the same deterministic sine trick
+  `riverColAt` uses, so no RNG and no seed to thread. **The invariant is tested, not asserted:**
+  ±`BAND_WOBBLE` (3) against an 11-row gap keeps the mid terrace ≥5 rows deep in every column, tested
+  ±8 columns beyond the map so the out-of-bounds fallback is covered too. Knock-ons: trees now plant
+  **by height, not row** (a wandering edge left bald patches south of every bulge), and the ore
+  cluster probes outward for a tile that really is mid terrace. Notably it broke two tests and a
+  verifier check that had hard-coded boundaries as fixed rows — all three now search for a real
+  terrace step instead, which tests the rule rather than the map.
+  See `docs/work/2026-07-25-band-wobble.md`.
+- **Balance pass (2026-07-25, same branch).** New `scripts/model-economy.ts` drives the real machine
+  ticks headlessly and reports rates, chain ratios, coast-to-cold, ore sustain and letter cost in
+  machine-minutes — rerun it after any constant moves. It found that **nothing was paced by
+  machines** (every letter was under a minute of machine time; the 10-iron win was 26 seconds of
+  furnace), that the **furnace threw away ~85% of its charcoal** (auto-stoke burned a whole charcoal
+  to recover the ~5 heat lost since the last check), that **ore was 43% of the player's time forever**,
+  and that **`FURNACE_ORE_CAP` was dead** (`inputCap` returned `ORE_PER_CYCLE*6`, so tuning it did
+  nothing — same drift class as the caps `status.ts` used to re-type). Owner chose: machines pace the
+  arc · fix the charcoal waste but keep a deliberate drain · ore becomes logistics. Result: sawmill
+  20 plank/min (exactly 4× the pit saw), clamp 8 charcoal/min against a furnace burning 5.6 (0.7
+  clamps per furnace), furnace 5 iron/min, ore field sustains 6.5 furnaces so the player mines 7% of
+  the time. Letters are 8/40/80 planks + 25 iron; buildings cost 0.5–2.0 machine-minutes. Coast-to-cold
+  (18.7s to stop smelting, 31.2s to cold) was already right and is untouched. Rail sequencing resolves
+  itself — the unlock now asks 25 iron against a ~14-iron starter route. **Four ratio guard tests**
+  lock the design rather than the constants. 38 Vitest + verifier green.
+  See `docs/work/2026-07-25-balance-pass.md`.
+- **Note:** letters check the *current bank*, and the bank is also the build currency — buying a
+  sawmill sets you back on the plank letter. Requirements are sized with that in mind.
+- **Engine checkpoint discharged (2026-07-30, ADR 004).** ADR 001 mandated a web-vs-Godot checkpoint
+  immediately after M5; this records it. **Web retained**, Godot deferred — not closed. Measured port
+  cost: sim 1,930 LOC ports *conceptually* (logic and tests translate, code does not run as-is),
+  render+UI 2,916 LOC rewritten, tests 634 LOC retranslated. Perf isn't the deciding factor (batch
+  semantics keep entity counts low, and the balance pass slowed everything further); Steam is the one
+  real pro-Godot argument and it's a packaging problem with two live answers. The decisive input —
+  the fun verdict — is still missing, so committing now would invert ADR 001's point. Four named
+  reversal criteria are in the ADR. **Sprite pipeline is explicitly decoupled:** SpriteCook-style
+  tools emit PNG sheets and work with Pixi as readily as Godot, but authored sprites need the
+  deferred integer-zoom pixel-upscale first, and trade `kit.ts`'s *rules* for baked *images* — its
+  own ADR when made.
+- **Next: the fun gate** — protocol, instrumentation and verdict template are in
+  `docs/work/2026-07-30-fun-gate-plan.md`. Note the blocker it surfaced: **M5's "Cadence
+  instrumentation v1" was never built** (it fell out when M5 was compressed into one PR), and the
+  question is specifically about cadence, which memory is worst at. So a pure append-only sim event
+  log + `dump()` export comes first, then the 40-minute session, then the written verdict. The
+  interpretation guide is agreed *before* playing so the result can't be rationalised afterwards.
 - **Deferred fast-follow:** true low-res pixel-upscale (integer zoom, literal plate crispness),
   sound/juice. Known sim nits reported in the 2026-07-23 session review (flume-without-trestles
   destroys logs; status.ts caps duplicated from constants; HUD rebuilds DOM every frame).

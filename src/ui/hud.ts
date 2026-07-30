@@ -38,6 +38,8 @@ export class Hud {
   private buildButtons = new Map<string, HTMLButtonElement>();
   private toastUntil = 0;
   private lastUnlockedKey = '';
+  private lastBankKey = '';
+  private lastHtml = new WeakMap<HTMLElement, string>();
 
   constructor(parent: HTMLElement, private input: Input) {
     this.root = el('div', 'hud-root');
@@ -92,18 +94,33 @@ export class Hud {
     const status = st
       ? `<div class="istat"><span class="dot" style="background:${STATUS_HEX[st.key]}"></span>${st.label}</div>`
       : '';
-    this.infoEl.innerHTML = `<div class="it">${def.label}</div><div class="ib">${def.blurb}</div>${status}${io.length ? `<div class="io">${io.join(' · ')}</div>` : ''}${heat}<div class="ihint">click elsewhere to close</div>`;
+    this.setHtml(
+      this.infoEl,
+      `<div class="it">${def.label}</div><div class="ib">${def.blurb}</div>${status}${io.length ? `<div class="io">${io.join(' · ')}</div>` : ''}${heat}<div class="ihint">click elsewhere to close</div>`,
+    );
     this.infoEl.classList.add('show');
   }
 
+  // Only touch the DOM when the markup actually changed — assigning innerHTML reparses the whole
+  // subtree, and these panels were being rewritten on every frame.
+  private setHtml(node: HTMLElement, html: string): void {
+    if (this.lastHtml.get(node) === html) return;
+    this.lastHtml.set(node, html);
+    node.innerHTML = html;
+  }
+
   update(state: GameState): void {
-    // Bank.
-    this.bankEl.replaceChildren();
-    for (const r of ALL_RESOURCES) {
-      const chip = el('div', 'bank-chip');
-      chip.append(el('span', 'g', RESOURCE_GLYPH[r]), el('span', 'v', String(state.bank[r])));
-      chip.title = r;
-      this.bankEl.append(chip);
+    // Bank. Content-keyed: this ran every frame, tearing down and rebuilding five chips at 60fps.
+    const bankKey = ALL_RESOURCES.map((r) => state.bank[r]).join(',');
+    if (bankKey !== this.lastBankKey) {
+      this.lastBankKey = bankKey;
+      this.bankEl.replaceChildren();
+      for (const r of ALL_RESOURCES) {
+        const chip = el('div', 'bank-chip');
+        chip.append(el('span', 'g', RESOURCE_GLYPH[r]), el('span', 'v', String(state.bank[r])));
+        chip.title = r;
+        this.bankEl.append(chip);
+      }
     }
     const carry = state.player.carry
       ? ` · carrying ${state.player.carryCount} ${state.player.carry}`
@@ -116,9 +133,12 @@ export class Hud {
         letter.sink === 'company'
           ? state.bank[letter.wantResource]
           : (state.buildings.find((b) => b.kind === 'blacksmith')?.delivered ?? 0);
-      this.letterEl.innerHTML = `<div class="lt">✉ ${letter.title}</div><div class="lb">${letter.body}</div><div class="lp">Deliver ${letter.wantResource}: <b>${have}/${letter.wantCount}</b>${letter.sink === 'blacksmith' ? ' — carry iron to the blacksmith (Q)' : ''}${carry}</div>`;
+      this.setHtml(
+        this.letterEl,
+        `<div class="lt">✉ ${letter.title}</div><div class="lb">${letter.body}</div><div class="lp">Deliver ${letter.wantResource}: <b>${have}/${letter.wantCount}</b>${letter.sink === 'blacksmith' ? ' — carry iron to the blacksmith (Q)' : ''}${carry}</div>`,
+      );
     } else {
-      this.letterEl.innerHTML = `<div class="lt">✓ Charter complete</div>${carry}`;
+      this.setHtml(this.letterEl, `<div class="lt">✓ Charter complete</div>${carry}`);
     }
 
     // Build bar (rebuild only when the unlocked set changes).

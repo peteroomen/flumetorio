@@ -1,12 +1,26 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import { generateWorld, bandHeight, heightAt } from './world';
-import { HEIGHT_BOTTOM, HEIGHT_MID, HEIGHT_TOP } from './constants';
+import {
+  CLAMP_OUT_CAP,
+  FURNACE_HEAT_DECAY_PER_S,
+  FURNACE_HEAT_PER_CHARCOAL,
+  FURNACE_IRON_CAP,
+  HEIGHT_BOTTOM,
+  HEIGHT_MID,
+  HEIGHT_TOP,
+  MAP_H,
+  MAP_W,
+  ORE_NODE_CAPACITY,
+  ORE_REGROW_MS,
+} from './constants';
 import { tickMachines, bankAllOutputs } from './machines';
 import { recomputeFlumePaths, tickFlume, tickIncline, tickFeeders } from './movers';
 import { actions, getGame, makeInitialState, checkLetters } from './store';
 import { placementError } from './buildings';
+import { recomputeRailRoutes, tickRail } from './rail';
+import { allUnlocksFor } from './progression';
 import { buildingStatus, isDropTargetKind, promptFor } from './status';
-import type { Building, BuildingKind, GameState } from './types';
+import type { Building, BuildingKind, GameState, ResourceKind } from './types';
 
 function drive(fn: (dt: number) => void, seconds: number, stepMs = 100): void {
   const steps = Math.round((seconds * 1000) / stepMs);
@@ -27,9 +41,34 @@ describe('world generation', () => {
   });
 
   it('lays three terrace bands', () => {
-    expect(bandHeight(3)).toBe(HEIGHT_TOP);
-    expect(bandHeight(15)).toBe(HEIGHT_MID);
-    expect(bandHeight(30)).toBe(HEIGHT_BOTTOM);
+    expect(bandHeight(5, 3)).toBe(HEIGHT_TOP);
+    expect(bandHeight(5, 15)).toBe(HEIGHT_MID);
+    expect(bandHeight(5, 30)).toBe(HEIGHT_BOTTOM);
+  });
+
+  it('gives every column all three terraces, in order, and never inverts them', () => {
+    for (let tx = -8; tx < MAP_W + 8; tx++) {
+      const col: number[] = [];
+      for (let ty = 0; ty < MAP_H; ty++) col.push(bandHeight(tx, ty));
+      // monotonically non-increasing down the map, and all three bands present
+      for (let i = 1; i < col.length; i++) expect(col[i]).toBeLessThanOrEqual(col[i - 1]);
+      expect(col).toContain(HEIGHT_TOP);
+      expect(col).toContain(HEIGHT_MID);
+      expect(col).toContain(HEIGHT_BOTTOM);
+      // the mid terrace must stay deep enough to build on
+      expect(col.filter((h) => h === HEIGHT_MID).length).toBeGreaterThanOrEqual(5);
+    }
+  });
+
+  it('wanders the terrace edges instead of ruling them straight', () => {
+    const edges = new Set<number>();
+    for (let tx = 0; tx < MAP_W; tx++) {
+      let ty = 0;
+      while (ty < MAP_H && bandHeight(tx, ty) === HEIGHT_TOP) ty++;
+      edges.add(ty);
+    }
+    // a straight boundary would give exactly one distinct edge row across the whole map
+    expect(edges.size).toBeGreaterThan(2);
   });
 
   it('produces trees and an ore outcrop', () => {
@@ -44,11 +83,11 @@ describe('sawmill power gating', () => {
     const g = makeInitialState(1);
     const mill = mkBuilding({ kind: 'sawmill', tx: 5, ty: 5, input: { log: 4 } });
     g.buildings.push(mill);
-    drive((dt) => tickMachines(g, dt), 5);
+    drive((dt) => tickMachines(g, dt), 15);
     expect(mill.output.plank ?? 0).toBe(0); // unpowered
 
     g.buildings.push(mkBuilding({ kind: 'waterwheel', tx: 6, ty: 5 }));
-    drive((dt) => tickMachines(g, dt), 5);
+    drive((dt) => tickMachines(g, dt), 15);
     expect(mill.output.plank ?? 0).toBeGreaterThan(0); // powered -> planks
   });
 });
@@ -138,14 +177,14 @@ describe('progression', () => {
     expect(g.activeLetterId).toBe(g.letters[1].id);
   });
 
-  it('wins when 10 iron is delivered to the blacksmith', () => {
+  it('wins when the blacksmith has its iron', () => {
     const g = getGame();
     // fast-forward the plank letters
-    g.bank.plank = 40;
+    g.bank.plank = 100;
     checkLetters(g);
     checkLetters(g);
     checkLetters(g);
-    g.buildings.push(mkBuilding({ kind: 'blacksmith', tx: 5, ty: 28, delivered: 10 }));
+    g.buildings.push(mkBuilding({ kind: 'blacksmith', tx: 5, ty: 28, delivered: 25 }));
     checkLetters(g);
     expect(g.won).toBe(true);
   });
@@ -160,7 +199,7 @@ describe('player verbs', () => {
     g.player.x = tree.tx + 0.5;
     g.player.y = tree.ty + 0.5;
     actions.interact(); // begin chop
-    for (let i = 0; i < 20; i++) actions.updateAction(100);
+    for (let i = 0; i < 30; i++) actions.updateAction(100);
     expect(g.player.carry).toBe('log');
     expect(g.player.carryCount).toBeGreaterThan(0);
 
@@ -169,7 +208,7 @@ describe('player verbs', () => {
     expect(actions.place('stockpile', 7, 25)).toBeNull();
     const saw = g.buildings.find((b) => b.kind === 'pitsaw')!;
     saw.input.log = 3;
-    for (let i = 0; i < 140; i++) actions.simStep(100);
+    for (let i = 0; i < 200; i++) actions.simStep(100);
     expect(g.bank.plank).toBeGreaterThan(0); // pit saw (unpowered) produced + banked planks
   });
 
@@ -240,7 +279,7 @@ describe('completable valley (seed 1)', () => {
 
     const beforePlank = g.bank.plank;
     find(g, mill.tx, mill.ty).input.log = 6;
-    for (let i = 0; i < 140; i++) actions.simStep(100);
+    for (let i = 0; i < 300; i++) actions.simStep(100);
     expect(g.bank.plank).toBeGreaterThan(beforePlank); // powered sawmill banked planks
 
     // Automated furnace: incline (ore) + clamp (charcoal) feeding one furnace.
@@ -254,9 +293,9 @@ describe('completable valley (seed 1)', () => {
     expect(clamp, 'a clamp fits beside the furnace').toBeTruthy();
     expect(actions.place('clamp', clamp.tx, clamp.ty)).toBeNull();
 
-    find(g, inc.tx, inc.ty).input.ore = 12;
-    find(g, clamp.tx, clamp.ty).input.log = 8;
-    for (let i = 0; i < 450; i++) actions.simStep(100);
+    find(g, inc.tx, inc.ty).input.ore = 20;
+    find(g, clamp.tx, clamp.ty).input.log = 12;
+    for (let i = 0; i < 1200; i++) actions.simStep(100);
     expect(find(g, furn.tx, furn.ty).output.iron ?? 0).toBeGreaterThan(0); // iron smelted on the real map
   });
 });
@@ -330,5 +369,266 @@ describe('serialization', () => {
     expect(clone.tiles.length).toBe(g.tiles.length);
     expect(clone.player.x).toBe(g.player.x);
     expect(heightAt(clone.tiles, 5, 3)).toBe(heightAt(g.tiles, 5, 3));
+  });
+});
+
+describe('the plateway', () => {
+  // A level run on the works terrace (rows 22+ are all height 0).
+  function layRoute(g: GameState, y = 26, len = 4): { a: Building; b: Building } {
+    const a = mkBuilding({ kind: 'railDock', tx: 5, ty: y, id: 1 });
+    const b = mkBuilding({ kind: 'railDock', tx: 5 + len + 1, ty: y, id: 2 });
+    g.buildings.push(a, b);
+    for (let i = 1; i <= len; i++) {
+      g.buildings.push(mkBuilding({ kind: 'rail', tx: 5 + i, ty: y, id: 100 + i }));
+    }
+    recomputeRailRoutes(g);
+    return { a, b };
+  }
+
+  it('refuses to climb — rails must join on the level', () => {
+    const g = makeInitialState(1);
+    // Find a real terrace step rather than assuming one at a fixed row: the band boundaries
+    // wander per column, so a hard-coded row is exactly the assumption this must not make.
+    let step: { tx: number; low: number; high: number } | null = null;
+    for (let tx = 2; tx < MAP_W - 2 && !step; tx++) {
+      for (let ty = 2; ty < MAP_H - 2; ty++) {
+        const a = heightAt(g.tiles, tx, ty);
+        const b = heightAt(g.tiles, tx, ty + 1);
+        const dry = g.tiles[ty * MAP_W + tx].terrain !== 'water';
+        const dryBelow = g.tiles[(ty + 1) * MAP_W + tx].terrain !== 'water';
+        if (a > b && dry && dryBelow) {
+          step = { tx, high: ty, low: ty + 1 };
+          break;
+        }
+      }
+    }
+    expect(step).not.toBeNull();
+    const { tx, low, high } = step!;
+    g.buildings.push(mkBuilding({ kind: 'railDock', tx, ty: low }));
+    expect(placementError(g, 'rail', tx, high)).toMatch(/cannot climb/i);
+    // ...but a level neighbour is fine
+    expect(placementError(g, 'rail', tx + 1, low)).toBeNull();
+  });
+
+  it('will not start a run in mid-air', () => {
+    const g = makeInitialState(1);
+    expect(placementError(g, 'rail', 5, 26)).toMatch(/loading dock or another rail/i);
+  });
+
+  it('runs exactly one wagon per route, owned by the lower-id dock', () => {
+    const g = makeInitialState(1);
+    const { a, b } = layRoute(g);
+    expect(a.wagon).toBeDefined();
+    expect(b.wagon).toBeUndefined();
+    expect(a.routeMateId).toBe(b.id);
+    expect(a.path?.length).toBe(6); // dock + 4 rails + dock
+  });
+
+  it('carries a lot from one dock to the other', () => {
+    const g = makeInitialState(1);
+    const { a, b } = layRoute(g);
+    a.input.ore = 5;
+    drive((dt) => tickRail(g, dt), 20);
+    expect(a.input.ore ?? 0).toBe(0);
+    expect(b.output.ore ?? 0).toBe(5);
+  });
+
+  it('leaves a dock with no second terminus without a wagon, and says so', () => {
+    const g = makeInitialState(1);
+    const lone = mkBuilding({ kind: 'railDock', tx: 5, ty: 26, id: 1 });
+    g.buildings.push(lone, mkBuilding({ kind: 'rail', tx: 6, ty: 26, id: 2 }));
+    recomputeRailRoutes(g);
+    expect(lone.wagon).toBeUndefined();
+    expect(buildingStatus(g, lone)?.label).toMatch(/no route/i);
+  });
+
+  it('accepts any resource at a dock, and survives a save round-trip', () => {
+    const g = makeInitialState(1);
+    const { a } = layRoute(g);
+    expect(isDropTargetKind(a, 'charcoal')).toBe(true);
+    expect(isDropTargetKind(a, 'iron')).toBe(true);
+    a.input.plank = 3;
+    drive((dt) => tickRail(g, dt), 4);
+    const clone = JSON.parse(JSON.stringify(g)) as GameState;
+    recomputeRailRoutes(clone);
+    const owner = clone.buildings.find((x) => x.id === a.id)!;
+    expect(owner.wagon).toBeDefined();
+    expect(owner.path?.length).toBe(6);
+  });
+
+  it('arrives as the reward for finishing the MVP arc', () => {
+    const g = makeInitialState(1);
+    expect(g.unlocked).not.toContain('rail');
+    for (const l of g.letters) l.done = true;
+    expect(allUnlocksFor(g.letters)).toContain('rail');
+    expect(allUnlocksFor(g.letters)).toContain('railDock');
+  });
+});
+
+describe('audit fixes', () => {
+  it('serves a three-dock run with exactly one wagon and reciprocal pairing', () => {
+    const g = makeInitialState(1);
+    const dock = (tx: number, id: number) => {
+      const b = mkBuilding({ kind: 'railDock', tx, ty: 26, id });
+      g.buildings.push(b);
+      return b;
+    };
+    const a = dock(5, 1);
+    const b = dock(9, 2);
+    const c = dock(13, 3);
+    for (const tx of [6, 7, 8, 10, 11, 12]) {
+      g.buildings.push(mkBuilding({ kind: 'rail', tx, ty: 26, id: 100 + tx }));
+    }
+    recomputeRailRoutes(g);
+    expect(g.buildings.filter((x) => x.wagon).length).toBe(1);
+    // whatever pairing is chosen, it must be reciprocal — never a->b while b->c
+    for (const d of [a, b, c]) {
+      if (d.routeMateId === undefined) continue;
+      const mate = g.buildings.find((x) => x.id === d.routeMateId)!;
+      expect(mate.routeMateId).toBe(d.id);
+    }
+  });
+
+  it('does not destroy logs tipped into a head-gate with no run', () => {
+    const g = makeInitialState(1);
+    const head = mkBuilding({ kind: 'flumeHead', tx: 8, ty: 8, id: 1 });
+    g.buildings.push(head);
+    recomputeFlumePaths(g);
+    g.flumeItems.push({ id: 900, headId: head.id, resource: 'log', progress: 0 });
+    tickFlume(g, 100);
+    expect(g.flumeItems.length).toBe(0);
+    const dropped = g.ground.find((x) => x.tx === head.tx && x.ty === head.ty);
+    expect(dropped?.resource).toBe('log');
+    expect(dropped?.count).toBe(1);
+  });
+
+  it('reads output caps from constants, so a balance tweak cannot desync the badge', () => {
+    const g = makeInitialState(1);
+    const clamp = mkBuilding({ kind: 'clamp', tx: 5, ty: 26, input: { log: 2 } });
+    g.buildings.push(clamp);
+    clamp.output.charcoal = CLAMP_OUT_CAP - 1;
+    expect(buildingStatus(g, clamp)?.key).not.toBe('outputFull');
+    clamp.output.charcoal = CLAMP_OUT_CAP;
+    expect(buildingStatus(g, clamp)?.key).toBe('outputFull');
+
+    const furnace = mkBuilding({ kind: 'furnace', tx: 7, ty: 26, heat: 90, input: { ore: 4, charcoal: 2 } });
+    g.buildings.push(furnace);
+    furnace.output.iron = FURNACE_IRON_CAP;
+    expect(buildingStatus(g, furnace)?.key).toBe('outputFull');
+  });
+});
+
+describe('audit batch two', () => {
+  function route(g: GameState): { a: Building; b: Building } {
+    const a = mkBuilding({ kind: 'railDock', tx: 5, ty: 26, id: 1 });
+    const b = mkBuilding({ kind: 'railDock', tx: 9, ty: 26, id: 2 });
+    g.buildings.push(a, b);
+    for (const tx of [6, 7, 8]) g.buildings.push(mkBuilding({ kind: 'rail', tx, ty: 26, id: 100 + tx }));
+    recomputeRailRoutes(g);
+    return { a, b };
+  }
+
+  it('only advertises a dock that can actually carry goods away', () => {
+    const g = makeInitialState(1);
+    const lone = mkBuilding({ kind: 'railDock', tx: 5, ty: 26, id: 1 });
+    g.buildings.push(lone);
+    recomputeRailRoutes(g);
+    expect(isDropTargetKind(lone, 'ore')).toBe(false);
+    const { a } = route(makeInitialState(1));
+    expect(isDropTargetKind(a, 'ore')).toBe(true);
+  });
+
+  it('never strands goods on a dock — they can be taken back off the stage', () => {
+    const g = makeInitialState(1);
+    const lone = mkBuilding({ kind: 'railDock', tx: 5, ty: 26, id: 1, input: { ore: 3 } });
+    g.buildings.push(lone);
+    actions.load(g);
+    const p = getGame().player;
+    p.x = 5.5;
+    p.y = 26.5;
+    p.carry = null;
+    p.carryCount = 0;
+    actions.interact();
+    expect(getGame().player.carry).toBe('ore');
+    expect(getGame().player.carryCount).toBe(3);
+    expect(getGame().buildings[0].input.ore ?? 0).toBe(0);
+  });
+
+  it('round-robins cargo so one resource cannot monopolise the route', () => {
+    const g = makeInitialState(1);
+    const { a, b } = route(g);
+    // logs keep arriving; iron is waiting behind them
+    a.input.log = 8;
+    a.input.iron = 4;
+    const carried: string[] = [];
+    for (let i = 0; i < 900; i++) {
+      tickRail(g, 100);
+      const c = a.wagon?.cargo;
+      if (c && carried[carried.length - 1] !== c) carried.push(c);
+      if ((a.input.log ?? 0) < 8) a.input.log = 8; // refill logs every tick
+    }
+    expect(carried).toContain('iron');
+    expect(b.output.iron ?? 0).toBeGreaterThan(0);
+  });
+});
+
+describe('balance ratios (the design intent, in numbers)', () => {
+  // Measured the same way scripts/model-economy.ts does. These lock the *ratios* the balance
+  // pass was designed around, so tuning a constant that breaks one surfaces here rather than in
+  // a playtest three sessions later.
+  function ratePerMin(kind: BuildingKind, out: ResourceKind, seconds = 300): { made: number; used: Record<string, number> } {
+    const g = makeInitialState(1);
+    const m = mkBuilding({ kind, tx: 5, ty: 25, heat: 100, cold: false, fuelTimer: 0, relighting: 0 });
+    g.buildings.push(m);
+    if (kind === 'sawmill') g.buildings.push(mkBuilding({ kind: 'waterwheel', tx: 6, ty: 25 }));
+    const inputs: ResourceKind[] = kind === 'furnace' ? ['ore', 'charcoal'] : ['log'];
+    const STOCK = 999;
+    const used: Record<string, number> = {};
+    let made = 0;
+    for (const r of inputs) m.input[r] = STOCK;
+    for (let t = 0; t < (seconds * 1000) / 100; t++) {
+      tickMachines(g, 100);
+      for (const r of inputs) {
+        const have = m.input[r] ?? 0;
+        if (have < STOCK) {
+          used[r] = (used[r] ?? 0) + (STOCK - have);
+          m.input[r] = STOCK;
+        }
+      }
+      made += m.output[out] ?? 0;
+      m.output[out] = 0;
+    }
+    const mins = seconds / 60;
+    for (const k of Object.keys(used)) used[k] /= mins;
+    return { made: made / mins, used };
+  }
+
+  it('a powered sawmill is about 4x the pit saw', () => {
+    const saw = ratePerMin('sawmill', 'plank');
+    const pit = ratePerMin('pitsaw', 'plank');
+    expect(saw.made / pit.made).toBeGreaterThanOrEqual(3.5);
+    expect(saw.made / pit.made).toBeLessThanOrEqual(4.5);
+  });
+
+  it('one clamp feeds one furnace, with headroom', () => {
+    const clamp = ratePerMin('clamp', 'charcoal');
+    const furn = ratePerMin('furnace', 'iron');
+    const clampsNeeded = (furn.used.charcoal ?? 0) / clamp.made;
+    expect(clampsNeeded).toBeLessThan(1); // one clamp is enough
+    expect(clampsNeeded).toBeGreaterThan(0.4); // ...but not trivially so
+  });
+
+  it('the furnace does not waste charcoal topping up a nearly-full heat bar', () => {
+    const furn = ratePerMin('furnace', 'iron');
+    // with no waste, burn rate is decay / heat-per-charcoal
+    const ideal = (FURNACE_HEAT_DECAY_PER_S * 60) / FURNACE_HEAT_PER_CHARCOAL;
+    expect(furn.used.charcoal ?? 0).toBeLessThan(ideal * 1.15);
+  });
+
+  it('the ore field can sustain more than one furnace, so ore is logistics not mining rate', () => {
+    const furn = ratePerMin('furnace', 'iron');
+    const w = generateWorld(1);
+    const ceiling = ((w.ores.length * ORE_NODE_CAPACITY) / ORE_REGROW_MS) * 60000;
+    expect(ceiling / (furn.used.ore ?? 1)).toBeGreaterThan(2);
   });
 });

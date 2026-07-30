@@ -119,6 +119,103 @@ try {
   });
   check('furnace smelts iron end-to-end in-browser', iron > 0, `iron=${iron}`);
 
+  // The plateway: a level route between two docks moves a lot end to end, in-browser.
+  const hauled = await page.evaluate(() => {
+    const { getGame, actions, rail } = window.__fw;
+    actions.init(1);
+    const g = getGame();
+    const mk = (kind, tx, ty, id) => ({
+      id,
+      kind,
+      tx,
+      ty,
+      input: {},
+      output: {},
+      progress: 0,
+    });
+    const a = mk('railDock', 5, 26, 1);
+    const b = mk('railDock', 10, 26, 2);
+    g.buildings.push(a, b);
+    for (let i = 1; i <= 4; i++) g.buildings.push(mk('rail', 5 + i, 26, 100 + i));
+    rail.recomputeRailRoutes(g);
+    a.input.ore = 5;
+    for (let i = 0; i < 300; i++) rail.tickRail(g, 100);
+    return { arrived: b.output.ore ?? 0, wagons: g.buildings.filter((x) => x.wagon).length };
+  });
+  check('plateway hauls a lot between docks in-browser', hauled.arrived === 5, `arrived=${hauled.arrived}`);
+  check('exactly one wagon per route', hauled.wagons === 1, `wagons=${hauled.wagons}`);
+
+  // Rails must not cross the track's centre line. A per-direction perpendicular flips sign on a
+  // straight run and drew each rail on both sides of centre, turning every tile into an X.
+  const straight = await page.evaluate(async () => {
+    const { getGame, actions, rail, scene } = window.__fw;
+    actions.init(1);
+    const g = getGame();
+    const mk = (kind, tx, ty, id) => ({ id, kind, tx, ty, input: {}, output: {}, progress: 0 });
+    g.buildings.push(mk('railDock', 4, 26, 1));
+    for (let i = 5; i <= 12; i++) g.buildings.push(mk('rail', i, 26, 100 + i));
+    g.buildings.push(mk('railDock', 13, 26, 2));
+    rail.recomputeRailRoutes(g);
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    // For an east-west run, every point of a given rail must stay on one side of y = ty + 0.5.
+    const offsets = [];
+    for (let tx = 5; tx <= 12; tx++) {
+      const pts = scene.railPointsAt(tx, 26, 1);
+      if (!pts) return { bad: `no rail at ${tx}` };
+      for (const p of pts) offsets.push(p.y - 26.5);
+    }
+    const min = Math.min(...offsets);
+    const max = Math.max(...offsets);
+    return { min, max, crosses: min < 0 && max > 0, spread: max - min };
+  });
+  check(
+    'rails run straight — never crossing the track centre line',
+    straight.crosses === false && straight.spread < 1e-6,
+    `offsets ${straight.min?.toFixed(3)}..${straight.max?.toFixed(3)}`,
+  );
+
+  // The flume descends on a steady grade instead of falling off the terraces with the ground.
+  const deck = await page.evaluate(async () => {
+    const { getGame, actions, movers, scene } = window.__fw;
+    actions.init(1);
+    const g = getGame();
+    const col = 8;
+    const mk = (kind, tx, ty, id) => ({ id, kind, tx, ty, input: {}, output: {}, progress: 0 });
+    // Rows 3..27 span all three terraces in every column: the band edges wander by at most
+    // BAND_WOBBLE (3), so the top edge is never above row 7 nor the mid edge below row 24.
+    const TOP = 3;
+    const BOT = 27;
+    g.buildings.push(mk('flumeHead', col, TOP, 1));
+    let id = 10;
+    for (let ty = TOP + 1; ty <= BOT; ty++) g.buildings.push(mk('flume', col, ty, id++));
+    for (const t of g.trees) if (t.tx === col) t.state = 'stump';
+    movers.recomputeFlumePaths(g);
+    scene.markTerrainDirty();
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    const decks = [];
+    const ground = [];
+    for (let ty = TOP; ty <= BOT; ty++) {
+      decks.push(scene.flumeDeckAt(col, ty));
+      ground.push(g.tiles[ty * 34 + col].height);
+    }
+    let maxStep = 0;
+    let monotonic = true;
+    for (let i = 1; i < decks.length; i++) {
+      const d = decks[i - 1] - decks[i];
+      if (d < -1e-6) monotonic = false;
+      maxStep = Math.max(maxStep, d);
+    }
+    const groundDrop = Math.max(...ground.map((h, i) => (i ? ground[i - 1] - h : 0)));
+    return { maxStep, monotonic, groundDrop, span: decks[0] - decks[decks.length - 1] };
+  });
+  check('flume deck never runs uphill', deck.monotonic);
+  check('flume descends its whole run', deck.span > 1.5, `span=${deck.span?.toFixed(2)} levels`);
+  check(
+    'flume rides over the terrace edge instead of dropping with it',
+    deck.maxStep < deck.groundDrop,
+    `worst flume step=${deck.maxStep?.toFixed(2)} vs ground drop=${deck.groundDrop}`,
+  );
+
   // Screenshots: fresh valley.
   await page.evaluate(() => {
     window.__fw.actions.init(1);

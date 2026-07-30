@@ -16,6 +16,7 @@ import {
   FURNACE_IRON_PER_CYCLE,
   FURNACE_MAX_HEAT,
   FURNACE_MIN_SMELT_HEAT,
+  FURNACE_ORE_CAP,
   FURNACE_ORE_PER_CYCLE,
   FURNACE_RELIGHT_CHARCOAL,
   FURNACE_RELIGHT_MS,
@@ -117,11 +118,14 @@ function tickFurnace(b: Building, dt: number): void {
     return;
   }
 
-  // Auto-stoke: burn charcoal on a cadence to keep the heat up.
+  // Auto-stoke: check on a cadence, but only burn when there is room for a whole charcoal's
+  // worth of heat. Stoking at `heat < MAX` spent a full charcoal to recover the ~5 heat lost
+  // since the last check and threw the other ~29 away — six times the fuel the heat economy
+  // actually implies, which is what made the clamp chain so hungry.
   b.fuelTimer = (b.fuelTimer ?? 0) - dt;
   if ((b.fuelTimer ?? 0) <= 0) {
     b.fuelTimer = FURNACE_FUEL_BURN_MS;
-    if ((b.heat ?? 0) < FURNACE_MAX_HEAT && count(b.input, 'charcoal') >= 1) {
+    if ((b.heat ?? 0) + FURNACE_HEAT_PER_CHARCOAL <= FURNACE_MAX_HEAT && count(b.input, 'charcoal') >= 1) {
       take(b.input, 'charcoal', 1);
       b.heat = Math.min(FURNACE_MAX_HEAT, (b.heat ?? 0) + FURNACE_HEAT_PER_CHARCOAL);
     }
@@ -153,7 +157,9 @@ export function inputCap(b: Building, res: ResourceKind): number {
     case 'clamp':
       return res === 'log' ? CLAMP_IN_CAP : 0;
     case 'furnace':
-      if (res === 'ore') return FURNACE_ORE_PER_CYCLE * 6; // ore bunker
+      // FURNACE_ORE_CAP is the bunker: it was declared but never read here, so tuning it did
+      // nothing — the same class of drift as the caps status.ts used to re-type.
+      if (res === 'ore') return FURNACE_ORE_CAP;
       if (res === 'charcoal') return FURNACE_CHARCOAL_CAP;
       return 0;
     default:
@@ -170,7 +176,15 @@ function adjacentStockpile(state: GameState, b: Building): boolean {
 // Machine outputs bank themselves if a stockpile sits beside them (the automation reward).
 export function bankAllOutputs(state: GameState): void {
   for (const b of state.buildings) {
-    if (b.kind !== 'pitsaw' && b.kind !== 'sawmill' && b.kind !== 'clamp' && b.kind !== 'furnace')
+    // A dock beside a stockpile banks what the wagon brought, so rail→stockpile automates the
+    // last metre the same way a mill beside one does.
+    if (
+      b.kind !== 'pitsaw' &&
+      b.kind !== 'sawmill' &&
+      b.kind !== 'clamp' &&
+      b.kind !== 'furnace' &&
+      b.kind !== 'railDock'
+    )
       continue;
     if (!adjacentStockpile(state, b)) continue;
     for (const res of Object.keys(b.output) as ResourceKind[]) {

@@ -4,7 +4,7 @@
 // Terrain is cached; everything that stands on it joins one back-to-front dynamic pass.
 
 import { Application, Container, Graphics, Text, TextStyle } from 'pixi.js';
-import type { Building, BuildingKind, GameState, Terrain } from '@/lib/sim/types';
+import type { Building, BuildingKind, GameState, ResourceKind, Terrain } from '@/lib/sim/types';
 import { bandHeight, heightAt, idx, inBounds } from '@/lib/sim/world';
 import { INCLINE_INTERVAL_MS, MAP_H, MAP_W, WATERWHEEL_POWER_RADIUS } from '@/lib/sim/constants';
 import { placementError, waterNeighbour } from '@/lib/sim/buildings';
@@ -56,6 +56,8 @@ const SHADOW_HZ: Record<BuildingKind, number> = {
   incline: 0.4,
   furnace: 2.4,
   blacksmith: 1.5,
+  rail: 0.12,
+  railDock: 0.7,
 };
 
 // Footprint each kind casts from, as [insetX, insetY, width, depth] in tiles — copied from the
@@ -69,7 +71,56 @@ const SHADOW_FOOT: Partial<Record<BuildingKind, [number, number, number, number]
   furnace: [0.06, 0.06, 0.88, 0.88], // the brick hearth course, not the iron stack above it
   waterwheel: [0.2, 0.2, 0.6, 0.6],
   pitsaw: [0.2, 0.2, 0.6, 0.6],
+  railDock: [0.1, 0.1, 0.8, 0.8],
 };
+
+// How far the flume's deck rides above whatever carries it.
+const FLUME_DECK_LIFT = 0.3;
+
+const RAIL_GAUGE = 0.14; // half-gauge in tiles; matches the incline's rails so they read as kin
+
+// One rail's centreline through a tile, in TILE space, for side +1 or -1.
+//
+// The offset comes from a consistent traversal — travel enters along -d1 and leaves along d2, and
+// both ends take the perpendicular of travel. Taking it from each half's own outward direction
+// flips its sign on a straight run (where d2 = -d1), which drew the same rail on either side of
+// the centre line and turned every tile into an X.
+function railPoints(
+  cx: number,
+  cy: number,
+  dirs: Dir[],
+  side: number,
+): Array<{ x: number; y: number }> {
+  const perp = (vx: number, vy: number) => ({ x: -vy, y: vx });
+  const d1 = dirs[0];
+  const pIn = perp(-d1.dx, -d1.dy);
+  const a = {
+    x: cx + d1.dx * 0.5 + pIn.x * RAIL_GAUGE * side,
+    y: cy + d1.dy * 0.5 + pIn.y * RAIL_GAUGE * side,
+  };
+  if (dirs.length < 2) {
+    return [{ x: cx + pIn.x * RAIL_GAUGE * side, y: cy + pIn.y * RAIL_GAUGE * side }, a];
+  }
+  const d2 = dirs[1];
+  const pOut = perp(d2.dx, d2.dy);
+  const e = {
+    x: cx + d2.dx * 0.5 + pOut.x * RAIL_GAUGE * side,
+    y: cy + d2.dy * 0.5 + pOut.y * RAIL_GAUGE * side,
+  };
+  if (d2.dx === -d1.dx && d2.dy === -d1.dy) return [a, e]; // straight through
+  // quarter-arc: the two rail lines meet at this corner, so it is the Bezier control point
+  const ctrl = { x: d1.dx !== 0 ? e.x : a.x, y: d1.dx !== 0 ? a.y : e.y };
+  const out: Array<{ x: number; y: number }> = [];
+  for (let i = 0; i <= 6; i++) {
+    const f = i / 6;
+    const m = 1 - f;
+    out.push({
+      x: m * m * a.x + 2 * m * f * ctrl.x + f * f * e.x,
+      y: m * m * a.y + 2 * m * f * ctrl.y + f * f * e.y,
+    });
+  }
+  return out;
+}
 
 // A tree/stump's off-centre stand within its tile. Shared by the canopy and the stump it leaves,
 // so felling doesn't teleport the trunk.
@@ -110,6 +161,8 @@ const BADGE_Z: Record<BuildingKind, number> = {
   incline: 1.1,
   furnace: 2.6,
   blacksmith: 2.0,
+  rail: 0.6,
+  railDock: 1.5,
 };
 
 interface Dir {
@@ -161,6 +214,8 @@ export class Scene {
   private overlayLayer = new Container();
   private overlayPool: Text[] = [];
   private promptText = new Text({ text: '', style: PROMPT_STYLE });
+  private flumeDeck = new Map<number, number>();
+  private railConns = new Map<number, FlumeConn>();
   private walkPhase = 0;
   private lastPx = 0;
   private lastPy = 0;
@@ -269,7 +324,7 @@ export class Scene {
     g.clear();
     this.waterAnim = [];
     const tiles = state.tiles;
-    const hOf = (tx: number, ty: number) => (inBounds(tx, ty) ? tiles[idx(tx, ty)].height : bandHeight(ty));
+    const hOf = (tx: number, ty: number) => (inBounds(tx, ty) ? tiles[idx(tx, ty)].height : bandHeight(tx, ty));
     const isWater = (tx: number, ty: number) => inBounds(tx, ty) && tiles[idx(tx, ty)].terrain === 'water';
     const surfOf = (tx: number, ty: number) => hOf(tx, ty) - (isWater(tx, ty) ? WATER_RECESS : 0);
 
@@ -404,7 +459,7 @@ export class Scene {
     cells.sort((a, b) => drawKey(a.tx, a.ty) - drawKey(b.tx, b.ty));
     for (const { tx, ty } of cells) {
       const out = Math.max(0, -tx, tx - (MAP_W - 1), -ty, ty - (MAP_H - 1));
-      const hh = bandHeight(ty);
+      const hh = bandHeight(tx, ty);
       const base = terrainColor(hh === 1 ? 'rock' : 'grass', hh);
       const patch = patchNoise(tx, ty, 5.5) * 0.62 + patchNoise(tx, ty, 2.1, 17) * 0.38;
       // `out` is a whole ring count, so a straight ramp fades in visible concentric steps.
@@ -412,7 +467,7 @@ export class Scene {
       const fade = Math.max(0, Math.min(1, 1 - (out + (patch - 0.5) * 2.2) / (M + 1)));
       const top = mix(HAZE, shade(base, 0.9 + patch * 0.19), fade);
       g.poly(flat(tileDiamond(tx, ty, hh))).fill({ color: top });
-      const lTo = bandHeight(ty + 1);
+      const lTo = bandHeight(tx, ty + 1);
       if (hh > lTo) {
         g.poly(
           flat([
@@ -526,7 +581,10 @@ export class Scene {
       }
     }
 
+    this.flumeDeck = this.computeFlumeDeck(state);
     const flumeConns = this.computeFlumeConns(state);
+    const railConns = this.computeRailConns(state);
+    this.railConns = railConns;
 
     interface Entry {
       key: number;
@@ -544,10 +602,20 @@ export class Scene {
       entries.push({ key: ore.tx + ore.ty + 1, draw: () => this.drawOre(g, tiles, ore.tx, ore.ty, ore.remaining) });
     }
     for (const b of state.buildings) {
+      const conn = b.kind === 'rail' ? railConns.get(idx(b.tx, b.ty)) : flumeConns.get(idx(b.tx, b.ty));
       entries.push({
-        key: b.tx + b.ty + 1,
-        draw: () => this.drawBuilding(g, state, b, t, flumeConns.get(idx(b.tx, b.ty))),
+        key: b.tx + b.ty + (b.kind === 'rail' ? 0.02 : 1), // track lies on the ground, under things
+        draw: () => this.drawBuilding(g, state, b, t, conn),
       });
+      // the wagon sorts by where it actually is, so it passes behind and in front correctly
+      if (b.kind === 'railDock' && b.wagon && b.path && b.path.length >= 2) {
+        const w = b.wagon;
+        const i = Math.max(0, Math.min(b.path.length - 2, Math.floor(w.pos)));
+        const f = Math.max(0, Math.min(1, w.pos - i));
+        const wx = b.path[i].tx + (b.path[i + 1].tx - b.path[i].tx) * f;
+        const wy = b.path[i].ty + (b.path[i + 1].ty - b.path[i].ty) * f;
+        entries.push({ key: wx + wy + 1.1, draw: () => this.drawWagon(g, state, b, t) });
+      }
     }
     for (const gi of state.ground) {
       const h = heightAt(tiles, gi.tx, gi.ty);
@@ -574,9 +642,10 @@ export class Scene {
       const bp = head.path[i + 1];
       const wx = a.tx + (bp.tx - a.tx) * frac + 0.5;
       const wy = a.ty + (bp.ty - a.ty) * frac + 0.5;
-      const ha = heightAt(tiles, a.tx, a.ty);
-      const hb = heightAt(tiles, bp.tx, bp.ty);
-      const hh = ha + (hb - ha) * frac + 0.34; // riding the trough
+      // riding the trough, on the flume's own deck — not on the ground under it
+      const da = this.flumeDeck.get(idx(a.tx, a.ty)) ?? heightAt(tiles, a.tx, a.ty) + FLUME_DECK_LIFT;
+      const db = this.flumeDeck.get(idx(bp.tx, bp.ty)) ?? heightAt(tiles, bp.tx, bp.ty) + FLUME_DECK_LIFT;
+      const hh = da + (db - da) * frac + 0.06;
       entries.push({
         key: wx + wy + 0.05, // just after its tile's trough, so it rides on the water
         draw: () => {
@@ -597,6 +666,95 @@ export class Scene {
 
     entries.sort((a, b) => a.key - b.key);
     for (const e of entries) e.draw();
+  }
+
+  // Per-tile track connectivity, from each owning dock's route (fallback: adjacency, so track
+  // you've laid but not yet joined to a second dock still draws as track).
+  private computeRailConns(state: GameState): Map<number, FlumeConn> {
+    const conns = new Map<number, FlumeConn>();
+    const ensure = (tx: number, ty: number): FlumeConn => {
+      const k = idx(tx, ty);
+      let c = conns.get(k);
+      if (!c) {
+        c = { ins: [], outs: [] };
+        conns.set(k, c);
+      }
+      return c;
+    };
+    const addDir = (list: Dir[], d: Dir) => {
+      if (!list.some((x) => x.dx === d.dx && x.dy === d.dy)) list.push(d);
+    };
+    for (const dock of state.buildings) {
+      if (dock.kind !== 'railDock' || !dock.path) continue;
+      for (let i = 0; i < dock.path.length - 1; i++) {
+        const a = dock.path[i];
+        const b = dock.path[i + 1];
+        const d = { dx: b.tx - a.tx, dy: b.ty - a.ty };
+        addDir(ensure(a.tx, a.ty).outs, d);
+        addDir(ensure(b.tx, b.ty).ins, { dx: -d.dx, dy: -d.dy });
+      }
+    }
+    for (const b of state.buildings) {
+      if (b.kind !== 'rail') continue;
+      const c = ensure(b.tx, b.ty);
+      if (c.ins.length || c.outs.length) continue;
+      for (const d of CARD) {
+        const hit = state.buildings.some(
+          (o) => (o.kind === 'rail' || o.kind === 'railDock') && o.tx === b.tx + d.dx && o.ty === b.ty + d.dy,
+        );
+        if (hit) addDir(c.ins, d);
+      }
+      if (c.ins.length === 0) c.ins.push({ dx: 1, dy: 0 }, { dx: -1, dy: 0 });
+    }
+    return conns;
+  }
+
+  // The flume's own elevation profile, per tile, in height-levels (absolute deck height).
+  //
+  // A flume is trestlework, not a groundsheet: it leaves the head-gate on a steady grade and the
+  // ground falls away beneath it. Sampling terrain per tile made the trough drop a whole terrace
+  // in one tile wherever the land did. So each run gets a straight line from head to tail, raised
+  // wherever terrain would poke through it:
+  //
+  //   grade   = max over i of (th[i] - th[n]) / (n - i)   — the gentlest grade that still lands
+  //   deck[i] = max(th[i], deck[i-1] - grade) + FLUME_DECK_LIFT
+  //
+  // i.e. descend no faster than `grade` per tile, but never sink into the ground. Both terms are
+  // non-increasing (the sim only extends a run downhill or level), so the deck is too — it can
+  // never run uphill. Taking the *worst* suffix grade rather than the head-to-tail average is
+  // what stops a mid-run plateau forcing a late plunge: the run leaves the head already shallow
+  // enough to clear the last cliff, so no single step has to make up the difference.
+  //
+  // The degenerate case stays honest: terrain that holds high until the final tile collapses the
+  // profile back onto terrain, because there is nowhere else for the flume to go.
+  private computeFlumeDeck(state: GameState): Map<number, number> {
+    const deck = new Map<number, number>();
+    const put = (tx: number, ty: number, z: number) => {
+      const k = idx(tx, ty);
+      const cur = deck.get(k);
+      if (cur === undefined || z > cur) deck.set(k, z);
+    };
+    for (const head of state.buildings) {
+      if (head.kind !== 'flumeHead' || !head.path || head.path.length === 0) continue;
+      const path = head.path;
+      const th = path.map((p) => heightAt(state.tiles, p.tx, p.ty));
+      const n = path.length - 1;
+      let grade = 0;
+      for (let i = 0; i < n; i++) grade = Math.max(grade, (th[i] - th[n]) / (n - i));
+      let z = th[0];
+      put(path[0].tx, path[0].ty, z + FLUME_DECK_LIFT);
+      for (let i = 1; i <= n; i++) {
+        z = Math.max(th[i], z - grade);
+        put(path[i].tx, path[i].ty, z + FLUME_DECK_LIFT);
+      }
+    }
+    // Track laid but not yet part of a run still needs somewhere to sit.
+    for (const b of state.buildings) {
+      if (b.kind !== 'flume' && b.kind !== 'flumeHead') continue;
+      if (deck.has(idx(b.tx, b.ty))) continue;
+      put(b.tx, b.ty, heightAt(state.tiles, b.tx, b.ty) + FLUME_DECK_LIFT);
+    }
+    return deck;
   }
 
   // Per-tile flume connectivity, derived from every head's computed path (fallback: adjacency).
@@ -813,6 +971,14 @@ export class Scene {
         this.drawFurnace(g, b, h, t);
         break;
       }
+      case 'rail': {
+        this.drawRail(g, b, h, conn);
+        break;
+      }
+      case 'railDock': {
+        this.drawRailDock(g, b, h, t);
+        break;
+      }
       case 'flumeHead':
       case 'flume': {
         this.drawFlume(g, state, b, h, t, conn);
@@ -988,12 +1154,172 @@ export class Scene {
     heap(x + 0.4 + drop.dx * 1.0, y + 0.4 + drop.dy * 1.0, nh, b.output.ore ?? 0);
   }
 
+  // ---------------- the plateway ----------------
+  // A track piece: a recessed ballast bed (so the route reads as a ribbon at 1x instead of
+  // dissolving into ground clutter), timber sleepers, and two iron edge-rails. A corner sweeps
+  // its rails through the tile centre rather than meeting at a right angle — in dimetric a
+  // mitred corner is very visible and a real quarter-curve costs nothing.
+  private drawRail(g: Graphics, b: Building, h: number, conn?: FlumeConn): void {
+    const x = b.tx;
+    const y = b.ty;
+    const cx = x + 0.5;
+    const cy = y + 0.5;
+    const dirs: Dir[] = [];
+    for (const d of [...(conn?.ins ?? []), ...(conn?.outs ?? [])]) {
+      if (!dirs.some((e) => e.dx === d.dx && e.dy === d.dy)) dirs.push(d);
+    }
+    if (dirs.length === 0) dirs.push({ dx: 1, dy: 0 }, { dx: -1, dy: 0 });
+
+    // ballast bed, one flat mass across every connected direction
+    for (const d of dirs) {
+      const px = -d.dy * 0.26;
+      const py = d.dx * 0.26;
+      g.poly(
+        flat([
+          project(cx + px, cy + py, h),
+          project(cx + d.dx * 0.5 + px, cy + d.dy * 0.5 + py, h),
+          project(cx + d.dx * 0.5 - px, cy + d.dy * 0.5 - py, h),
+          project(cx - px, cy - py, h),
+        ]),
+      ).fill({ color: COLORS.stoneD });
+    }
+    // sleepers, laid across the run
+    for (const d of dirs) {
+      const px = -d.dy * 0.2;
+      const py = d.dx * 0.2;
+      for (const f of [0.2, 0.36, 0.5]) {
+        const a = project(cx + d.dx * f + px, cy + d.dy * f + py, h + 0.01);
+        const e = project(cx + d.dx * f - px, cy + d.dy * f - py, h + 0.01);
+        g.moveTo(a.x, a.y).lineTo(e.x, e.y).stroke({ width: 2, color: COLORS.woodD });
+      }
+    }
+    // Rails. The offset has to come from a consistent TRAVERSAL through the tile, not from each
+    // half's own outward direction: on a straight run the two dirs are opposite, so a per-direction
+    // perpendicular flips sign and draws the same rail on either side of the centre line — every
+    // tile became an X. Travel enters along -d1 and leaves along d2, and both ends take the
+    // perpendicular of travel, so a straight run is one straight rail and a bend pairs inner with
+    // inner. Sampled in tile space and projected: `project` is linear in (wx, wy) at fixed height.
+    for (const side of [1, -1]) {
+      const scr = railPoints(cx, cy, dirs, side).map((q) => project(q.x, q.y, h + 0.04));
+      const stroke = (dy: number, w: number, col: number) => {
+        g.moveTo(scr[0].x, scr[0].y + dy);
+        for (const q of scr.slice(1)) g.lineTo(q.x, q.y + dy);
+        g.stroke({ width: w, color: col });
+      };
+      stroke(0, 2, COLORS.ironXD);
+      // a hairline on the sun side — iron polished by use, not a pale tube
+      stroke(-1.2, 0.8, COLORS.iron);
+    }
+  }
+
+  private drawRailDock(g: Graphics, b: Building, h: number, t: number): void {
+    const x = b.tx;
+    const y = b.ty;
+    // a low timber loading stage with an iron-shod edge and a lamp post
+    box(g, x + 0.1, y + 0.1, h, 0.8, 0.8, 0.16, COLORS.wood);
+    box(g, x + 0.14, y + 0.14, h + 0.16, 0.72, 0.72, 0.04, COLORS.woodL);
+    bandAround(g, x + 0.1, y + 0.1, h, 0.8, 0.8, 0.17, COLORS.ironD, 2);
+    // corner bollards
+    for (const [px, py] of [
+      [0.13, 0.13],
+      [0.79, 0.13],
+      [0.13, 0.79],
+    ]) {
+      box(g, x + px, y + py, h + 0.2, 0.08, 0.08, 0.16, COLORS.ironD);
+    }
+    // a gas lamp on the fourth corner — the dock is where you stand at dusk
+    box(g, x + 0.78, y + 0.78, h + 0.2, 0.07, 0.07, 0.5, COLORS.iron);
+    const lamp = project(x + 0.815, y + 0.815, h + 0.76);
+    g.circle(lamp.x, lamp.y, 4).fill({ color: COLORS.glow, alpha: 0.16 });
+    g.circle(lamp.x, lamp.y, 2.2).fill({ color: 0xffcd78, alpha: 0.75 + 0.25 * Math.sin(t * 3) });
+    // what's waiting to leave, stacked on the stage
+    const waiting = Object.entries(b.input).filter(([, n]) => (n ?? 0) > 0);
+    let i = 0;
+    for (const [res, n] of waiting) {
+      for (let k = 0; k < Math.min(3, n ?? 0); k++) {
+        const p = project(x + 0.3 + i * 0.22, y + 0.35, h + 0.2 + k * 0.05);
+        g.rect(p.x - 4, p.y - 3 - k * 2, 8, 3).fill({ color: RESOURCE_COLORS[res as ResourceKind] });
+      }
+      i++;
+      if (i >= 2) break;
+    }
+  }
+
+  // The wagon and its horse, drawn at the wagon's position along the owning dock's route.
+  private drawWagon(g: Graphics, state: GameState, dock: Building, t: number): void {
+    const w = dock.wagon;
+    if (!w || !dock.path || dock.path.length < 2) return;
+    const i = Math.max(0, Math.min(dock.path.length - 2, Math.floor(w.pos)));
+    const f = Math.max(0, Math.min(1, w.pos - i));
+    const a = dock.path[i];
+    const bp = dock.path[i + 1];
+    const wx = a.tx + (bp.tx - a.tx) * f + 0.5;
+    const wy = a.ty + (bp.ty - a.ty) * f + 0.5;
+    const h = heightAt(state.tiles, a.tx, a.ty);
+    const moving = w.dwell <= 0;
+    const sway = moving ? Math.sin(t * 7) * 0.012 : 0;
+    // Track is always axis-aligned, so the wagon is built in WORLD space from the kit and picks
+    // up the same face shading as every building. Drawn as a screen-aligned rect it sat visibly
+    // off the rails on any run that wasn't heading screen-right.
+    const dx = (bp.tx - a.tx) * w.dir;
+    const dy = (bp.ty - a.ty) * w.dir;
+    const alongX = dx !== 0;
+    const halfL = 0.3;
+    const halfW = 0.17;
+    const ex = alongX ? halfL : halfW;
+    const ey = alongX ? halfW : halfL;
+
+    blobShadow(g, wx, wy, h, 0.2, 0.5, 0.22);
+    // wheels, on the rails
+    for (const s of [1, -1]) {
+      const gx = alongX ? 0.16 : 0.14 * s;
+      const gy = alongX ? 0.14 * s : 0.16;
+      for (const e2 of [1, -1]) {
+        const p2 = project(wx + (alongX ? gx * e2 : gx), wy + (alongX ? gy : gy * e2), h + 0.04);
+        g.circle(p2.x, p2.y, 2).fill({ color: COLORS.ironXD });
+      }
+    }
+    // chaldron body — timber, iron-bound
+    box(g, wx - ex, wy - ey + sway, h + 0.06, ex * 2, ey * 2, 0.2, COLORS.wood);
+    bandAround(g, wx - ex, wy - ey + sway, h + 0.06, ex * 2, ey * 2, 0.19, COLORS.ironD, 1.5);
+    // the lot rides visible in the bed — same stacking language as a ground item
+    if (w.cargo && w.count > 0) {
+      const stack = Math.min(3, Math.ceil(w.count / 3));
+      for (let k = 0; k < stack; k++) {
+        box(
+          g,
+          wx - ex * 0.7,
+          wy - ey * 0.7 + sway,
+          h + 0.26 + k * 0.06,
+          ex * 1.4,
+          ey * 1.4,
+          0.06,
+          RESOURCE_COLORS[w.cargo],
+        );
+      }
+    }
+    // the horse, ahead on the trace — the clearest statement that this is not yet steam
+    const hx = wx + dx * 0.66;
+    const hy = wy + dy * 0.66;
+    const hp = project(hx, hy, h);
+    const step = moving ? Math.sin(t * 6) * 1.3 : 0;
+    blobShadow(g, hx, hy, h, 0.13, 0.7, 0.2);
+    const tr0 = project(wx + dx * 0.3, wy + dy * 0.3, h + 0.2);
+    const tr1 = project(hx - dx * 0.16, hy - dy * 0.16, h + 0.18);
+    g.moveTo(tr0.x, tr0.y).lineTo(tr1.x, tr1.y).stroke({ width: 1, color: COLORS.woodD });
+    g.rect(hp.x - 3, hp.y - 6 + step, 2, 6).fill({ color: 0x53381f }); // legs
+    g.rect(hp.x + 1, hp.y - 6 - step, 2, 6).fill({ color: 0x53381f });
+    box(g, hx - 0.16, hy - 0.1, h + 0.26, 0.32, 0.2, 0.18, 0x6b4a30); // barrel
+    const fwd = (dx - dy) > 0 ? 1 : -1;
+    g.rect(hp.x + fwd * 4 - 1.5, hp.y - 19, 3, 6).fill({ color: 0x6b4a30 }); // neck
+    g.rect(hp.x + fwd * 5 - 2, hp.y - 21, 5, 3).fill({ color: 0x7d5738 }); // head
+  }
+
   private drawFlume(g: Graphics, state: GameState, b: Building, h: number, t: number, conn?: FlumeConn): void {
     const x = b.tx;
     const y = b.ty;
     const cx = x + 0.5;
     const cy = y + 0.5;
-    const lift = 0.28;
     const isHead = b.kind === 'flumeHead';
     const wn = isHead ? waterNeighbour(state.tiles, b.tx, b.ty) : null;
     const dirs: Array<{ d: Dir; out: boolean }> = [];
@@ -1005,26 +1331,43 @@ export class Scene {
     }
     if (dirs.length === 0) dirs.push({ d: { dx: 1, dy: 0 }, out: false }, { d: { dx: -1, dy: 0 }, out: false });
 
-    // trestle legs near each connected edge
+    // This tile's deck, and the elevation the trough hands over to each neighbour at their
+    // shared edge — halfway between the two decks, so consecutive pieces meet exactly.
+    const deck = this.flumeDeck.get(idx(x, y)) ?? h + FLUME_DECK_LIFT;
+    const edgeZ = (d: Dir): number => {
+      const nd = this.flumeDeck.get(idx(x + d.dx, y + d.dy));
+      return nd === undefined ? deck : (deck + nd) / 2;
+    };
+
+    // Trestles: legs from the ground up to the deck, so they GROW under a flying span instead of
+    // staying a fixed stub. A tall span gets a bent under its middle as well as its edges.
     for (const { d } of dirs) {
-      trestleBent(g, cx + d.dx * 0.34, cy + d.dy * 0.34, h, lift, d.dx, d.dy);
+      const f = 0.34;
+      const z = deck + (edgeZ(d) - deck) * (f / 0.5);
+      trestleBent(g, cx + d.dx * f, cy + d.dy * f, h, z - h, d.dx, d.dy);
     }
-    // trough halves: bed, water, rails
+    if (deck - h > 0.55) {
+      const d0 = dirs[0].d;
+      trestleBent(g, cx, cy, h, deck - h, d0.dx, d0.dy);
+    }
+
+    // trough halves: bed, water, rails — sloping from the tile centre out to each edge
     const half = (d: Dir, water: boolean, flowOut: boolean) => {
       const px = -d.dy;
       const py = d.dx;
-      const quad = (wHalf: number, z: number) =>
+      const ez = edgeZ(d);
+      const quad = (wHalf: number, dz: number) =>
         flat([
-          project(cx + px * wHalf, cy + py * wHalf, h + z),
-          project(cx + d.dx * 0.5 + px * wHalf, cy + d.dy * 0.5 + py * wHalf, h + z),
-          project(cx + d.dx * 0.5 - px * wHalf, cy + d.dy * 0.5 - py * wHalf, h + z),
-          project(cx - px * wHalf, cy - py * wHalf, h + z),
+          project(cx + px * wHalf, cy + py * wHalf, deck + dz),
+          project(cx + d.dx * 0.5 + px * wHalf, cy + d.dy * 0.5 + py * wHalf, ez + dz),
+          project(cx + d.dx * 0.5 - px * wHalf, cy + d.dy * 0.5 - py * wHalf, ez + dz),
+          project(cx - px * wHalf, cy - py * wHalf, deck + dz),
         ]);
-      g.poly(quad(0.19, lift)).fill({ color: COLORS.woodD });
-      if (water) g.poly(quad(0.12, lift + 0.04)).fill({ color: COLORS.water1 });
+      g.poly(quad(0.19, 0)).fill({ color: COLORS.woodD });
+      if (water) g.poly(quad(0.12, 0.04)).fill({ color: COLORS.water1 });
       for (const side of [1, -1]) {
-        const a = project(cx + px * 0.19 * side, cy + py * 0.19 * side, h + lift + 0.1);
-        const e = project(cx + d.dx * 0.5 + px * 0.19 * side, cy + d.dy * 0.5 + py * 0.19 * side, h + lift + 0.1);
+        const a = project(cx + px * 0.19 * side, cy + py * 0.19 * side, deck + 0.1);
+        const e = project(cx + d.dx * 0.5 + px * 0.19 * side, cy + d.dy * 0.5 + py * 0.19 * side, ez + 0.1);
         g.moveTo(a.x, a.y).lineTo(e.x, e.y).stroke({ width: 2, color: COLORS.wood });
       }
       if (water) {
@@ -1032,7 +1375,8 @@ export class Scene {
           const f0 = (t * 0.7 + i / 2 + tileNoise(x + i, y)) % 1;
           // in-halves flow edge→centre, out-halves centre→edge
           const off = flowOut ? 0.5 * f0 : 0.5 - 0.5 * f0;
-          const p = project(cx + d.dx * off, cy + d.dy * off, h + lift + 0.05);
+          const z = deck + (ez - deck) * (off / 0.5);
+          const p = project(cx + d.dx * off, cy + d.dy * off, z + 0.05);
           g.rect(p.x - 1, p.y - 1, 3, 1.5).fill({ color: COLORS.water2, alpha: 0.8 });
         }
       }
@@ -1047,21 +1391,23 @@ export class Scene {
       const gpy = gd.dx * 0.24;
       const gx = cx + gd.dx * 0.4;
       const gy = cy + gd.dy * 0.4;
-      box(g, gx + gpx - 0.04, gy + gpy - 0.04, h, 0.08, 0.08, lift + 0.5, COLORS.woodD);
-      box(g, gx - gpx - 0.04, gy - gpy - 0.04, h, 0.08, 0.08, lift + 0.5, COLORS.woodD);
-      if (gd.dx !== 0) box(g, gx - 0.04, gy - 0.28, h + lift + 0.42, 0.08, 0.56, 0.08, COLORS.wood);
-      else box(g, gx - 0.28, gy - 0.04, h + lift + 0.42, 0.56, 0.08, 0.08, COLORS.wood);
-      const gb = (s: number, z: number) => project(gx + gpx * s * 0.8, gy + gpy * s * 0.8, h + lift + z);
+      // posts stand on the ground and carry the deck, however high that has risen
+      const post = deck - h + 0.5;
+      box(g, gx + gpx - 0.04, gy + gpy - 0.04, h, 0.08, 0.08, post, COLORS.woodD);
+      box(g, gx - gpx - 0.04, gy - gpy - 0.04, h, 0.08, 0.08, post, COLORS.woodD);
+      if (gd.dx !== 0) box(g, gx - 0.04, gy - 0.28, deck + 0.42, 0.08, 0.56, 0.08, COLORS.wood);
+      else box(g, gx - 0.28, gy - 0.04, deck + 0.42, 0.56, 0.08, 0.08, COLORS.wood);
+      const gb = (s: number, z: number) => project(gx + gpx * s * 0.8, gy + gpy * s * 0.8, deck + z);
       // the gate board is bound in verdigris — it stands in the water all day
       g.poly(flat([gb(1, 0.08), gb(-1, 0.08), gb(-1, 0.3), gb(1, 0.3)])).fill({ color: COLORS.wood });
       g.poly(flat([gb(1, 0.08), gb(-1, 0.08), gb(-1, 0.3), gb(1, 0.3)])).stroke({ width: 1.5, color: COLORS.verdD, alpha: 0.9 });
       g.moveTo(gb(1, 0.19).x, gb(1, 0.19).y).lineTo(gb(-1, 0.19).x, gb(-1, 0.19).y).stroke({ width: 1, color: COLORS.verd });
-      const scr = project(gx, gy, h + lift + 0.58);
+      const scr = project(gx, gy, deck + 0.58);
       g.circle(scr.x, scr.y, 3).stroke({ width: 1.5, color: COLORS.brass });
       g.moveTo(scr.x - 3, scr.y).lineTo(scr.x + 3, scr.y).stroke({ width: 1, color: COLORS.brass });
       g.moveTo(scr.x, scr.y - 3).lineTo(scr.x, scr.y + 3).stroke({ width: 1, color: COLORS.brass });
       // churn where the water enters under the gate
-      const sp = project(gx, gy, h + lift + 0.05);
+      const sp = project(gx, gy, deck + 0.05);
       g.rect(sp.x - 3, sp.y, 6, 2).fill({ color: COLORS.water2, alpha: 0.5 + 0.3 * Math.sin(t * 8) });
     }
   }
@@ -1182,21 +1528,24 @@ export class Scene {
       }
     }
 
-    // 3) machine status badges — attention states flash and show WHAT they want
+    // 3) machine status badges — attention states flash and show WHAT they want.
+    // `k` holds them at a constant SCREEN size: they live in the zoomed world container, so at 4x
+    // they were 64x48px and the loudest thing in frame.
+    const k = 1 / Math.max(1, view.zoom);
     for (const b of state.buildings) {
       const st = buildingStatus(state, b);
       if (!st) continue;
       const c = anchor(b);
       const col = STATUS_COLOR[st.key];
       if (st.key === 'running') {
-        g.circle(c.x + 10, c.y + 2, 2).fill({ color: col, alpha: 0.85 });
+        g.circle(c.x + 10 * k, c.y + 2 * k, 2 * k).fill({ color: col, alpha: 0.85 });
         continue;
       }
-      this.drawBadge(g, c.x, c.y, st.key, col, pulse);
+      this.drawBadge(g, c.x, c.y, st.key, col, pulse, k);
       if (st.want) {
-        g.rect(c.x + 9, c.y - 5, 6, 6)
+        g.rect(c.x + 9 * k, c.y - 5 * k, 6 * k, 6 * k)
           .fill({ color: RESOURCE_COLORS[st.want], alpha: 0.5 + 0.5 * pulse })
-          .stroke({ width: 1, color: 0x000000, alpha: 0.4 });
+          .stroke({ width: k, color: 0x000000, alpha: 0.4 });
       }
     }
 
@@ -1206,8 +1555,8 @@ export class Scene {
       for (const b of state.buildings) {
         if (b.kind !== 'blacksmith') continue;
         const c = anchor(b, 0.75);
-        g.rect(c.x - 3, c.y - 12, 6, 6).fill({ color: RESOURCE_COLORS.iron });
-        g.poly([c.x - 5, c.y - 4, c.x + 5, c.y - 4, c.x, c.y + 2]).fill({ color: 0xffb347, alpha: 0.4 + 0.6 * pulse });
+        g.rect(c.x - 3 * k, c.y - 12 * k, 6 * k, 6 * k).fill({ color: RESOURCE_COLORS.iron });
+        g.poly([c.x - 5 * k, c.y - 4 * k, c.x + 5 * k, c.y - 4 * k, c.x, c.y + 2 * k]).fill({ color: 0xffb347, alpha: 0.4 + 0.6 * pulse });
       }
     }
 
@@ -1242,31 +1591,34 @@ export class Scene {
     }
   }
 
-  private drawBadge(g: Graphics, x: number, y: number, key: StatusKey, col: number, pulse = 1): void {
+  // `k` scales every dimension so the badge holds a constant screen size inside the zoomed world.
+  private drawBadge(g: Graphics, x: number, y: number, key: StatusKey, col: number, pulse = 1, k = 1): void {
     const a = 0.45 + 0.55 * pulse; // attention badges flash
-    g.roundRect(x - 8, y - 6, 16, 12, 3).fill({ color: 0x11151c, alpha: 0.92 }).stroke({ width: 1, color: col, alpha: a });
+    g.roundRect(x - 8 * k, y - 6 * k, 16 * k, 12 * k, 3 * k)
+      .fill({ color: 0x11151c, alpha: 0.92 })
+      .stroke({ width: k, color: col, alpha: a });
     const cx = x;
     const cy = y;
     switch (key) {
       case 'noPower':
-        g.moveTo(cx - 4, cy - 3).lineTo(cx + 4, cy + 3).stroke({ width: 1.4, color: col, alpha: a });
-        g.poly([cx - 1, cy - 3, cx - 3, cy, cx, cy, cx - 2, cy + 3]).stroke({ width: 1, color: col, alpha: a });
+        g.moveTo(cx - 4 * k, cy - 3 * k).lineTo(cx + 4 * k, cy + 3 * k).stroke({ width: 1.4 * k, color: col, alpha: a });
+        g.poly([cx - k, cy - 3 * k, cx - 3 * k, cy, cx, cy, cx - 2 * k, cy + 3 * k]).stroke({ width: k, color: col, alpha: a });
         break;
       case 'needsFuel':
         // a flickering flame — the Factorio "out of fuel" alert
-        g.poly([cx, cy - 4, cx + 3, cy + 1, cx + 1.5, cy + 3, cx - 1.5, cy + 3, cx - 3, cy + 1]).fill({ color: col, alpha: a });
-        g.circle(cx, cy + 1, 1).fill({ color: 0xffe08a, alpha: a });
+        g.poly([cx, cy - 4 * k, cx + 3 * k, cy + k, cx + 1.5 * k, cy + 3 * k, cx - 1.5 * k, cy + 3 * k, cx - 3 * k, cy + k]).fill({ color: col, alpha: a });
+        g.circle(cx, cy + k, k).fill({ color: 0xffe08a, alpha: a });
         break;
       case 'needsInput':
-        g.poly([cx - 3, cy - 3, cx + 3, cy - 3, cx, cy + 3]).fill({ color: col, alpha: a });
+        g.poly([cx - 3 * k, cy - 3 * k, cx + 3 * k, cy - 3 * k, cx, cy + 3 * k]).fill({ color: col, alpha: a });
         break;
       case 'outputFull':
-        g.poly([cx - 3, cy + 3, cx + 3, cy + 3, cx, cy - 3]).fill({ color: col, alpha: a });
+        g.poly([cx - 3 * k, cy + 3 * k, cx + 3 * k, cy + 3 * k, cx, cy - 3 * k]).fill({ color: col, alpha: a });
         break;
       case 'cold':
-        g.circle(cx, cy, 2.4).fill({ color: col, alpha: a });
-        g.moveTo(cx - 4, cy).lineTo(cx + 4, cy).stroke({ width: 1, color: col, alpha: a });
-        g.moveTo(cx, cy - 4).lineTo(cx, cy + 4).stroke({ width: 1, color: col, alpha: a });
+        g.circle(cx, cy, 2.4 * k).fill({ color: col, alpha: a });
+        g.moveTo(cx - 4 * k, cy).lineTo(cx + 4 * k, cy).stroke({ width: k, color: col, alpha: a });
+        g.moveTo(cx, cy - 4 * k).lineTo(cx, cy + 4 * k).stroke({ width: k, color: col, alpha: a });
         break;
       default:
         break;
@@ -1391,5 +1743,24 @@ export class Scene {
 
   get heightStep(): number {
     return HEIGHT_STEP;
+  }
+
+  // Instrument hook (ADR 002): the flume's deck elevation at a tile, so a verifier can read the
+  // descent as numbers rather than judging pixels. Populated by the last rendered frame.
+  flumeDeckAt(tx: number, ty: number): number | undefined {
+    return this.flumeDeck.get(idx(tx, ty));
+  }
+
+  // Instrument hook (ADR 002): one rail's centreline through a tile in tile space, so a verifier
+  // can prove the rails don't cross the track's centre line rather than judging pixels.
+  railPointsAt(tx: number, ty: number, side: number): Array<{ x: number; y: number }> | null {
+    const conn = this.railConns.get(idx(tx, ty));
+    if (!conn) return null;
+    const dirs: Dir[] = [];
+    for (const d of [...conn.ins, ...conn.outs]) {
+      if (!dirs.some((e) => e.dx === d.dx && e.dy === d.dy)) dirs.push(d);
+    }
+    if (dirs.length === 0) return null;
+    return railPoints(tx + 0.5, ty + 0.5, dirs, side);
   }
 }

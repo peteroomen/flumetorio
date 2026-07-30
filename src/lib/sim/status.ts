@@ -4,7 +4,13 @@
 import { REACH } from './constants';
 import { count } from './buffers';
 import { isPoweredAt } from './machines';
-import { FURNACE_MIN_SMELT_HEAT } from './constants';
+import {
+  CLAMP_OUT_CAP,
+  FURNACE_IRON_CAP,
+  FURNACE_MIN_SMELT_HEAT,
+  PITSAW_OUT_CAP,
+  SAWMILL_OUT_CAP,
+} from './constants';
 import type { Building, BuildingKind, GameState, ResourceKind } from './types';
 
 export type StatusKey = 'running' | 'needsInput' | 'needsFuel' | 'noPower' | 'outputFull' | 'cold';
@@ -38,9 +44,18 @@ export function buildingStatus(state: GameState, b: Building): Status | null {
         return { key: 'needsFuel', attention: true, want: 'charcoal', label: 'Cooling — needs charcoal' };
       if (count(b.input, 'ore') < 1)
         return { key: 'needsInput', attention: true, want: 'ore', label: 'Hot but idle — needs ore' };
-      if ((b.output.iron ?? 0) >= 20)
+      if ((b.output.iron ?? 0) >= FURNACE_IRON_CAP)
         return { key: 'outputFull', attention: true, label: 'Full of iron — collect it' };
       return { key: 'running', attention: false, label: 'Smelting' };
+    }
+    case 'railDock': {
+      if (!b.routeMateId)
+        return { key: 'noPower', attention: true, label: 'No route — run rails to a second dock' };
+      const waiting = Object.values(b.input).reduce((n, v) => n + (v ?? 0), 0);
+      const arrived = Object.values(b.output).reduce((n, v) => n + (v ?? 0), 0);
+      if (arrived > 0) return { key: 'outputFull', attention: true, label: 'Goods arrived — collect them' };
+      if (waiting < 1) return { key: 'needsInput', attention: true, label: 'Idle — load goods for the wagon' };
+      return { key: 'running', attention: false, label: 'Hauling' };
     }
     case 'incline': {
       if (count(b.input, 'ore') < 1 && count(b.output, 'ore') < 1)
@@ -53,10 +68,11 @@ export function buildingStatus(state: GameState, b: Building): Status | null {
 }
 
 function outCapOf(b: Building): number {
-  // mirrors the per-machine output cap used by the tick
-  if (b.kind === 'clamp') return 8;
-  if (b.kind === 'pitsaw') return 4;
-  return 12; // sawmill
+  // Read from constants, never re-typed: these literals used to be duplicated here, so tuning a
+  // cap for balance would have left the "output full" badge silently lying.
+  if (b.kind === 'clamp') return CLAMP_OUT_CAP;
+  if (b.kind === 'pitsaw') return PITSAW_OUT_CAP;
+  return SAWMILL_OUT_CAP;
 }
 
 function dist(px: number, py: number, tx: number, ty: number): number {
@@ -65,6 +81,9 @@ function dist(px: number, py: number, tx: number, ty: number): number {
 
 // Is building `b` a valid place to deposit resource `res`? (kind-level, ignoring distance)
 export function isDropTargetKind(b: Building, res: ResourceKind): boolean {
+  // A terminus takes anything — but only advertise one that can actually move it. A routeless
+  // dock invited loads it could never carry away.
+  if (b.kind === 'railDock') return b.routeMateId !== undefined;
   switch (res) {
     case 'iron':
       return b.kind === 'blacksmith' || b.kind === 'stockpile';
@@ -105,7 +124,9 @@ export function promptFor(state: GameState): string | null {
             ? 'Q — tip logs into the flume'
             : b.kind === 'stockpile'
               ? `Q — stock ${res} (delivers to the Company)`
-              : `Q — load ${res} into the ${b.kind}`;
+              : b.kind === 'railDock'
+                ? `Q — load ${res} onto the plateway`
+                : `Q — load ${res} into the ${b.kind}`;
       if (!best || d < best.d) best = { d, verb };
     }
     if (best) return best.verb;
@@ -125,6 +146,10 @@ export function promptFor(state: GameState): string | null {
     furnace: 'iron',
   };
   for (const b of state.buildings) {
+    if (b.kind === 'railDock' && dist(p.x, p.y, b.tx, b.ty) <= REACH) {
+      const got = (Object.keys(b.output) as ResourceKind[]).find((k) => (b.output[k] ?? 0) > 0);
+      if (got) return `E — collect ${got} from the dock`;
+    }
     const r = outMap[b.kind];
     if (r && (b.output[r] ?? 0) > 0 && dist(p.x, p.y, b.tx, b.ty) <= REACH)
       return `E — collect ${r}`;

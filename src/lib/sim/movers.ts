@@ -55,6 +55,9 @@ export function tickFlume(state: GameState, dt: number): void {
   for (const it of state.flumeItems) {
     const head = state.buildings.find((b) => b.id === it.headId);
     if (!head || !head.path || head.path.length < 2) {
+      // A head-gate with no run yet: the load stays put at the gate. It used to be deleted, so
+      // tipping a barrow into a flume you hadn't built out destroyed the logs with no feedback.
+      if (head) dropGround(state, head.tx, head.ty, it.resource);
       arrived.push(it.id);
       continue;
     }

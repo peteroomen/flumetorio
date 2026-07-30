@@ -19,10 +19,11 @@ import {
 import { ALL_RESOURCES, type Building, type BuildingKind, type GameState, type ResourceKind } from './types';
 import { generateWorld, idx, inBounds, isWaterAt } from './world';
 import { BUILDINGS, canAfford, placementError } from './buildings';
-import { FURNACE_CHARCOAL_CAP } from './constants';
+import { FURNACE_CHARCOAL_CAP, RAIL_DOCK_CAP } from './constants';
 import { add, count } from './buffers';
 import { inputCap, tickMachines, bankAllOutputs } from './machines';
 import { recomputeFlumePaths, tickFeeders, tickFlume, tickIncline } from './movers';
+import { recomputeRailRoutes, tickRail } from './rail';
 import { allUnlocksFor, initialLetters } from './progression';
 
 export interface StoreShape {
@@ -131,6 +132,7 @@ export const actions = {
   load(state: GameState): void {
     store.setState({ game: state, rev: 0 });
     recomputeFlumePaths(getGame());
+    recomputeRailRoutes(getGame());
     bump();
   },
 
@@ -223,7 +225,25 @@ export const actions = {
       bump();
       return;
     }
-    // 3) collect a machine's output
+    // 3) collect from a loading dock — a dock holds whatever the wagon brought, not one fixed
+    // kind. `output` (arrived) first, then `input` (loaded but not yet gone), so goods can always
+    // come back off a loading stage — otherwise a dock that never gets a route strands them.
+    for (const b of g.buildings) {
+      if (b.kind !== 'railDock') continue;
+      if (centerDist(p.x, p.y, b.tx, b.ty) > REACH) continue;
+      for (const buf of [b.output, b.input]) {
+        for (const res of Object.keys(buf) as ResourceKind[]) {
+          const avail = buf[res] ?? 0;
+          if (avail > 0 && canCarry(g, res)) {
+            const moved = addToBarrow(g, res, avail);
+            buf[res] = avail - moved;
+            bump();
+            return;
+          }
+        }
+      }
+    }
+    // 3b) collect a machine's output
     const outMap: Partial<Record<BuildingKind, ResourceKind>> = {
       pitsaw: 'plank',
       sawmill: 'plank',
@@ -328,6 +348,16 @@ export const actions = {
         return;
       }
     }
+    // A loading dock takes anything — it's a terminus, not a machine with one appetite.
+    const dock = pick('railDock');
+    if (dock) {
+      const moved = add(dock.input, res, p.carryCount, RAIL_DOCK_CAP);
+      if (moved > 0) {
+        removeCarry(p, moved);
+        bump();
+        return;
+      }
+    }
     // Stockpile banks anything.
     const pile = pick('stockpile');
     if (pile) {
@@ -373,6 +403,7 @@ export const actions = {
     if (kind === 'blacksmith') b.delivered = 0;
     g.buildings.push(b);
     if (kind === 'flume' || kind === 'flumeHead') recomputeFlumePaths(g);
+    if (kind === 'rail' || kind === 'railDock') recomputeRailRoutes(g);
     bump();
     return null;
   },
@@ -384,6 +415,7 @@ export const actions = {
     tickMachines(g, dtMs);
     tickFlume(g, dtMs);
     tickIncline(g, dtMs);
+    tickRail(g, dtMs);
     tickFeeders(g);
     bankAllOutputs(g);
     regrow(g);

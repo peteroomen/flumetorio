@@ -30,49 +30,49 @@ export const BUILDINGS: Record<BuildingKind, BuildingDef> = {
     kind: 'waterwheel',
     label: 'Waterwheel',
     blurb: 'Must sit beside the river. Powers machines within its line-shaft reach.',
-    cost: { plank: 6 },
+    cost: { plank: 12 },
     hotkey: '3',
   },
   sawmill: {
     kind: 'sawmill',
     label: 'Sawmill',
     blurb: 'Logs → planks. Needs waterwheel power within reach.',
-    cost: { plank: 4 },
+    cost: { plank: 10 },
     hotkey: '4',
   },
   flumeHead: {
     kind: 'flumeHead',
     label: 'Flume head-gate',
     blurb: 'Must sit beside water. Tip logs here; they ride downhill to the tail.',
-    cost: { plank: 5 },
+    cost: { plank: 20 },
     hotkey: '5',
   },
   flume: {
     kind: 'flume',
     label: 'Flume trestle',
     blurb: 'Extends the flume run. Must continue downhill or level.',
-    cost: { plank: 1 },
+    cost: { plank: 3 },
     hotkey: '6',
   },
   clamp: {
     kind: 'clamp',
     label: 'Charcoal clamp',
     blurb: 'Logs → charcoal. Slow, needs no power.',
-    cost: { plank: 4 },
+    cost: { plank: 20 },
     hotkey: '7',
   },
   incline: {
     kind: 'incline',
     label: 'Gravity incline',
     blurb: 'Place across a downhill step. Self-acting carts carry ore to the low end.',
-    cost: { plank: 6 },
+    cost: { plank: 30 },
     hotkey: '8',
   },
   furnace: {
     kind: 'furnace',
     label: 'Blast furnace',
     blurb: 'Ore + charcoal → iron. Stoke it — a cold furnace is costly to relight.',
-    cost: { plank: 8 },
+    cost: { plank: 40 },
     hotkey: '9',
   },
   blacksmith: {
@@ -81,6 +81,20 @@ export const BUILDINGS: Record<BuildingKind, BuildingDef> = {
     blurb: 'The town’s first works. Deliver iron here.',
     cost: {},
     hotkey: '0',
+  },
+  railDock: {
+    kind: 'railDock',
+    label: 'Loading dock',
+    blurb: 'A terminus for the plateway. Load goods here (Q); a wagon carries them to the far dock.',
+    cost: { plank: 20, iron: 2 },
+    hotkey: 't',
+  },
+  rail: {
+    kind: 'rail',
+    label: 'Plateway',
+    blurb: 'Iron edge-rails. Must stay level — a loaded wagon cannot climb a terrace.',
+    cost: { iron: 1 },
+    hotkey: 'r',
   },
 };
 
@@ -143,11 +157,27 @@ export function placementError(
       if (!bordersDrop) return 'An incline needs a downhill step — build it at a terrace edge.';
       return null;
     }
+    case 'rail': {
+      // Must extend from a dock or another rail, and must join it on the LEVEL. This refusal is
+      // the arc's whole desire chain — a loaded wagon cannot climb — so it is never silent.
+      if (tile.terrain === 'forest') return 'Fell the tree here first.';
+      const neighbours = state.buildings.filter(
+        (b) =>
+          (b.kind === 'rail' || b.kind === 'railDock') &&
+          Math.abs(b.tx - tx) + Math.abs(b.ty - ty) === 1,
+      );
+      if (neighbours.length === 0) return 'Rails must run from a loading dock or another rail.';
+      const here = heightAt(tiles, tx, ty);
+      if (!neighbours.some((b) => heightAt(tiles, b.tx, b.ty) === here))
+        return 'A loaded wagon cannot climb — the plateway must stay level.';
+      return null;
+    }
     case 'pitsaw':
     case 'sawmill':
     case 'clamp':
     case 'furnace':
     case 'stockpile':
+    case 'railDock':
     case 'blacksmith':
       if (tile.terrain === 'forest') return 'Fell the tree here first.';
       return null;
